@@ -66,11 +66,13 @@ each PR may need him to click "Approve and run".
 
 ### 4. After he merges
 
-Steve squash-merges, so my branch's commits never land as they are. The branch is finished; don't
-build on it.
+The branch is finished; don't build on it. Steve has merged with a merge commit (PR #368: my
+commit `4fc221d` is in his `main` exactly as I wrote it), so `-d` is enough and git will refuse
+if anything on the branch isn't merged. If he ever squash-merges instead, git can't tell the work
+landed, and `-d` refuses; check the PR says Merged, then use `-D`.
 
 ```
-git branch -D ja/<topic>
+git branch -d ja/<topic>
 git push origin --delete ja/<topic>
 ```
 
