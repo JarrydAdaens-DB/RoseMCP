@@ -1266,22 +1266,35 @@ private:
 
 	// The toolbar's shortcuts, through the provider's key seam. Losing it costs the shortcuts and
 	// nothing else, the same trade the pointer seam makes for the fade.
+	//
+	// Installing it is guarded as well as the callback, because it runs inside Build and a throw there
+	// fails the whole install: the toolbar would never be appended. An app on an older Windows App
+	// SDK runtime is the expected way to get one -- InputKeyboardSource::GetForIsland lives on a later
+	// statics interface than the pointer source, so asking for it throws rather than answering null.
 	void WatchKeys()
 	{
-		const auto watched = RoseTapWatchKeys(
-			m_layer,
-			[this](RoseKeyPress const& press)
-			{
-				try
+		bool watched = false;
+		try
+		{
+			watched = RoseTapWatchKeys(
+				m_layer,
+				[this](RoseKeyPress const& press)
 				{
-					return OnKey(press);
-				}
-				catch (winrt::hresult_error const&)
-				{
-					// Runs on every key press in somebody else's application. Never throw out of it.
-					return false;
-				}
-			});
+					try
+					{
+						return OnKey(press);
+					}
+					catch (winrt::hresult_error const&)
+					{
+						// Runs on every key press in somebody else's application. Never throw out of it.
+						return false;
+					}
+				});
+		}
+		catch (winrt::hresult_error const& error)
+		{
+			Log(std::wstring(L"overlay: installing the key seam failed: ") + error.message().c_str());
+		}
 
 		Log(watched ? L"overlay: watching keys for the toolbar's shortcuts"
 					: L"overlay: no key source; the toolbar's shortcuts will not work");
