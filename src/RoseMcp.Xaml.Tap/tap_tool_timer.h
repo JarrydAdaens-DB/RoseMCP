@@ -1,25 +1,26 @@
 #pragma once
 
 // The delayed select: a chip that holds a delay, the menu that chooses it, and the countdown that
-// runs on the chip before the overlay picks whatever is under the pointer.
+// runs on the chip before the overlay enters select mode.
 //
 // Included after the provider's aliases, like the overlay it lives on, because it builds XAML.
 //
-// It exists for the UI that dismisses itself when the overlay is reached for: a flyout closes on a
-// click elsewhere, and a tooltip or a hover state ends on a pointer exit. So the countdown puts
-// nothing over the app and captures nothing -- the person spends it opening the thing they want --
-// and when it ends the overlay hit-tests where the pointer already is. Arming select mode at zero
-// instead would put the capture layer under the pointer, which is the exit that ends the hover.
+// It exists for the UI that has to be opened by hand before it can be picked: a flyout, a menu, a
+// hover state. Clicking Select arms the mode at once, with the pointer on the toolbar and the thing
+// to inspect still closed. With a delay set, the countdown puts nothing over the app and captures
+// nothing, so the person spends it opening what they want, and at zero select mode arms exactly as
+// the chip would have -- the delay goes before the mode and changes nothing about it, as the
+// Snipping Tool's timer does.
 //
-// One clock. The pick is driven by a single DispatcherTimer on the UI thread, and the digit and the
-// sweep by a single storyboard of the same length started in the same call, so the picture and the
-// pick cannot drift apart by more than a frame. Nothing runs on another thread, nothing sleeps, and
+// One clock. Zero is a single DispatcherTimer on the UI thread, and the digit and the sweep a single
+// storyboard of the same length started in the same call, so the picture and the switch into select
+// mode cannot drift apart by more than a frame. Nothing runs on another thread, nothing sleeps, and
 // every way out of a countdown goes through Finish, which stops both.
 
 class RoseTimerTool final : protected RoseWidgets
 {
 public:
-	// expired is called when a countdown reaches zero, and the overlay picks. busy is told whenever
+	// expired is called when a countdown reaches zero, and the overlay arms select. busy is told whenever
 	// the menu opens or closes and whenever a countdown starts or stops, so the overlay can keep the
 	// panel at full strength while either is going on: a countdown happens with the pointer out in
 	// the app, which is exactly when the panel would otherwise fade.
@@ -45,8 +46,8 @@ public:
 
 		m_button = Chip(
 			face,
-			L"Delay before select -- with a delay set, Select element counts down instead, and then picks "
-				L"whatever is under the pointer without a click. Open the flyout or hover the control meanwhile",
+			L"Delay before select -- with a delay set, Select element counts down first, then enters select "
+				L"mode. Open the flyout or hover the control meanwhile",
 			[this] { OnChip(); });
 
 		ShowDelay();
@@ -78,7 +79,7 @@ public:
 						try
 						{
 							// Stopped before anything else: a DispatcherTimer has no one-shot mode, and a
-							// second tick behind a slow pick would pick twice.
+							// second tick behind a slow arm would arm twice.
 							Finish(true);
 						}
 						catch (winrt::hresult_error const& error)
@@ -109,7 +110,8 @@ public:
 		Log(L"overlay: countdown of " + std::to_wstring(m_delay) + L"s started");
 	}
 
-	// Stops a countdown without picking. Safe whether or not one is running; returns whether one was.
+	// Stops a countdown without arming select. Safe whether or not one is running; returns whether one
+	// was.
 	bool Cancel()
 	{
 		if (!m_running) return false;
@@ -337,6 +339,10 @@ private:
 	}
 
 	// Every way out of a countdown, so none of them can leave the timer or the board running.
+	//
+	// m_expired comes last, after m_running is cleared and the timer and board are stopped: what it
+	// does is arm select, and arming cancels any countdown. Called any earlier, that cancel would find
+	// this one still running and finish it a second time from inside the first.
 	void Finish(bool expired)
 	{
 		const bool wasRunning = m_running;

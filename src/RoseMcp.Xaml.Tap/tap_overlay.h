@@ -430,7 +430,9 @@ private:
 		if (!m_root || mode == Pointing::None) return false;
 
 		// Arming a mode, from the toolbar or the pipe, is a decision about the pointer now, so a
-		// countdown that would pick later is cancelled rather than left to fire into the mode.
+		// countdown that would arm select later is cancelled rather than left to fire into the mode.
+		// When the countdown's own expiry is what arms select, this finds it already finished and
+		// does nothing.
 		CancelCountdown();
 
 		// Switching between the modes keeps the layer that is already up rather than replacing it.
@@ -1075,7 +1077,6 @@ private:
 		// Out of any mode first: the countdown exists so the app can be used while it runs, and a
 		// capture layer would take every click meant for it.
 		GoIdle();
-		m_includeAllElements = false;
 		m_timerTool.Start();
 	}
 
@@ -1084,40 +1085,19 @@ private:
 		m_timerTool.Cancel();
 	}
 
-	// The countdown reached zero: pick where the pointer is, putting nothing under it first. That is
-	// the point of the delay -- a capture layer, a click or anything drawn under the pointer would
-	// send the app the exit or the click that dismisses the flyout being picked.
+	// The countdown reached zero: arm select mode, exactly as the Select chip does with no delay. The
+	// delay goes before the mode and changes nothing about it, so the picking that follows is the
+	// ordinary hover and click, and the host sees the mode go from idle to select as it would for a
+	// click on the chip.
 	void CountdownEnded()
 	{
 		try
 		{
-			const auto point = m_pointer;
-
-			const bool unknown = point.X < 0 || point.Y < 0;
-			if (unknown)
-			{
-				Log(L"overlay: countdown ended with the pointer outside the window; nothing picked");
-				return;
-			}
-
-			// Beneath would answer with whatever app element sits under the toolbar, which nobody
-			// pointed at.
-			if (Contains(PanelRect(), point))
-			{
-				Log(L"overlay: countdown ended with the pointer on the toolbar; nothing picked");
-				return;
-			}
-
-			if (!PickAt(point))
-			{
-				Log(L"overlay: countdown ended over nothing pickable");
-			}
-
-			Chrome();
+			if (!BeginSelect(false)) Log(L"overlay: select mode did not arm after the countdown");
 		}
 		catch (winrt::hresult_error const& error)
 		{
-			Log(std::wstring(L"overlay: timed pick failed: ") + error.message().c_str());
+			Log(std::wstring(L"overlay: select mode could not arm after the countdown: ") + error.message().c_str());
 		}
 	}
 
@@ -1502,7 +1482,14 @@ private:
 			// A click is a pointer position, and not always preceded by a move -- a touch, or the
 			// pointer arriving and pressing in one gesture, produces no PointerMoved at all.
 			m_pointer = point;
-			PickAt(point);
+			winrt::Windows::Foundation::Rect rect{};
+			if (const auto element = Beneath(point, rect))
+			{
+				// The picked element keeps its outline after select mode ends: that persistent mark is
+				// the evidence of what "the selected element" now means, for the person and the agent.
+				const bool drawn = m_pick.Take(element, Record(element, point), rect);
+				Log(L"overlay: selection outline " + std::wstring(drawn ? L"drawn" : L"NOT drawn"));
+			}
 		}
 		catch (winrt::hresult_error const& error)
 		{
@@ -1514,21 +1501,6 @@ private:
 		// arm, click, arm again for every element somebody wants to measure from.
 		if (m_pointing == Pointing::Select) GoIdle();
 		else m_rulersTool.ClearMeasurement(); // The pointer is over the new anchor, so there is nothing to measure to.
-	}
-
-	// Picks whatever is under a point, the way a click there would. Shared by the click and the timed
-	// pick, so the two cannot come to different answers; returns whether anything was picked.
-	bool PickAt(winrt::Windows::Foundation::Point const& point)
-	{
-		winrt::Windows::Foundation::Rect rect{};
-		const auto element = Beneath(point, rect);
-		if (!element) return false;
-
-		// The picked element keeps its outline after select mode ends: that persistent mark is the
-		// evidence of what "the selected element" now means, for the person and the agent.
-		const bool drawn = m_pick.Take(element, Record(element, point), rect);
-		Log(L"overlay: selection outline " + std::wstring(drawn ? L"drawn" : L"NOT drawn"));
-		return true;
 	}
 
 	/// Writes the selection for an element that arrived from the tree rather than from a click.
