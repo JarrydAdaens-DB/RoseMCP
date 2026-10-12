@@ -1,8 +1,10 @@
 # Plan: Hotkeys for the overlay toolbar
 
 - **Story:** [Milestone 1, story 1](../../../milestones/milestone-1-overlay-ergonomics.md#1-hotkeys-for-the-overlay-toolbar)
-- **Related:** [Story 2's plan](../2-delayed-select/plan.md). Its timer chip and Escape-to-cancel need
-  this story's key path.
+- **Related:** [Story 2's plan](../2-delayed-select/plan.md) (the timer). The two are independent:
+  separate branches from the same commit, separate PRs. Hotkeys for the timer are
+  [Story 3](../../../milestones/milestone-1-overlay-ergonomics.md#3-hotkeys-for-the-timer), after
+  both have merged.
 - **Status:** In progress
 - **Last updated:** 12 October 2026
 - **Size:** medium. The bindings are trivial. The risk is in the key seam: it is per-framework,
@@ -22,7 +24,7 @@ The invariant and decision records that go with it.
 
 **Out:** the Inspector's XAML pane hotkeys (a separate story, per the milestone). User-configurable
 bindings. VS actions Rose has no equivalent for (Live Visual Tree, Track Focused Element,
-accessibility, Hot Reload status). Story 2's timer chip, unless Story 2 lands first (see step 6).
+accessibility, Hot Reload status). Anything for Story 2's timer, which is Story 3.
 
 ## Current understanding
 
@@ -94,7 +96,7 @@ accessibility, Hot Reload status). Story 2's timer chip, unless Story 2 lands fi
 - **Q4. Which WinUI 3 key source works?** Status: OPEN. Step 3 answers it by measurement.
   - It has to see a key when focus is in the app's own content, including when the app marked the
     key handled.
-  - Ideally it also sees a key when focus is in one of the app's popups, which matters for Story 2.
+  - Ideally it also sees a key when focus is in one of the app's popups, which matters for Story 3.
   - If no source can swallow a key, Q3's answer is "never swallow" on WinUI. Record that in the
     invariant.
 - **Q5. Does a key reach us at all when focus is outside the main island?** Status: OPEN.
@@ -144,8 +146,8 @@ accessibility, Hot Reload status). Story 2's timer chip, unless Story 2 lands fi
    - In `Build()`, install the seam next to `WatchPointer()`.
    - `OnKey` looks the chord up in the table, applies Q2's liveness rule, and calls the existing
      method.
-   - Escape cancels the most specific armed thing first. Today that is just the mode. Story 2 adds
-     its menu and countdown in front of it.
+   - Escape cancels the most specific armed thing first. Today that is just the mode. Story 3 adds
+     the timer's menu and countdown in front of it.
    - Wrap the body in a `try`/`catch` like the pointer callbacks. It runs on every keystroke in
      someone else's app and must never throw out.
    - Zoom: the overlay is not the zoom tool, so expose a small `HandleKey` on `RoseZoomTool`. Its
@@ -154,8 +156,7 @@ accessibility, Hot Reload status). Story 2's timer chip, unless Story 2 lands fi
    - Append the shortcut to each chip's tip, e.g. `Select element (Ctrl+Shift+C)`, taking the key
      text from the same table.
    - The zoom tool's chips do the same in `tap_tool_zoom.h`.
-6. **Story 2 timer chip.** Only if Story 2 landed first: give it a row in the table. Story 2's plan
-   assumes the reverse order and adds the row itself.
+6. **Story 2 timer chip.** Not here. Its row in the table is Story 3.
 7. **Records.**
    - `docs/invariants/overlay.md`: what the key seam must and must not do, and what was measured for
      each framework (numbers only where a decision rests on them).

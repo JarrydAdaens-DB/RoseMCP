@@ -8,7 +8,11 @@ drive, so picking and measuring elements doesn't mean reaching for the mouse eve
 | # | Story | Status |
 | --- | --- | --- |
 | 1 | [Hotkeys for the overlay toolbar](#1-hotkeys-for-the-overlay-toolbar) | In progress |
-| 2 | [Delayed select, like the Snipping Tool's timer](#2-delayed-select-like-the-snipping-tools-timer) | Planned |
+| 2 | [Delayed select, like the Snipping Tool's timer](#2-delayed-select-like-the-snipping-tools-timer) | In progress |
+| 3 | [Hotkeys for the timer](#3-hotkeys-for-the-timer) | Waiting on 1 and 2 |
+
+Stories 1 and 2 are independent: each has its own branch from the same commit, and its own PR.
+Anything that needs both lives in Story 3, so neither PR waits on the other.
 
 ---
 
@@ -42,7 +46,7 @@ shortcut.
   VS's bar also has Go to Live Visual Tree, Track Focused Element, an accessibility button and the
   Hot Reload status. Rose has no equivalent of those, so they're out of scope.
 
-  If Story 2 lands first, its timer chip (after Select element) needs a shortcut too.
+  Story 2's timer chip gets its shortcut in Story 3, not here.
 
 - **Open question: what VS actually binds.** I couldn't find documented hotkeys for VS's in-app
   toolbar; Microsoft's pages only describe the buttons. Check in VS under Tools > Options >
@@ -69,7 +73,7 @@ shortcut.
 
 ### 2. Delayed select, like the Snipping Tool's timer
 
-**Status:** Planned
+**Status:** In progress (branch `ja/delayed-select`, no code yet)
 
 **Why:** the UI I most need to inspect is the UI that goes away when I reach for the overlay:
 flyouts, tooltips, hover states, menus, anything that dismisses on a pointer exit or a click
@@ -117,8 +121,8 @@ repo). It shows the toolbar with the new timer chip and its menu open.
    `docs/decisions/a-pick-honours-hit-testing-and-prefers-the-apps-markup.md`). It shows its
    outline and reaches agents and the Inspector exactly like a clicked pick.
 8. **Cancellable.** Clicking Idle, Select element or the timer chip during the countdown cancels
-   it, and the chip goes back to its resting icon. So does Escape, once Story 1 exists. Cancelling
-   leaves nothing running.
+   it, and the chip goes back to its resting icon. Cancelling leaves nothing running. (Escape is
+   Story 3.)
 9. **No delay behaves exactly as Select element does now.**
 
 **Notes:**
@@ -170,7 +174,34 @@ repo). It shows the toolbar with the new timer chip and its menu open.
 - Where it lives: `BuildBar()`, `BeginSelect` and `GoIdle` in `src/RoseMcp.Xaml.Tap/tap_overlay.h`;
   chips come from `tap_widgets.h`. Read `docs/invariants/tap-tiers.md` before adding a file, and
   `docs/invariants/overlay.md` before starting.
-- **Works with Story 1.** A hotkey for "select after the current delay" lets the countdown start
-  without the pointer ever leaving the target UI. That may be the version that works best.
+- **Doesn't depend on Story 1.** Everything here works by pointer. Its hotkeys are Story 3.
 
 **Plan:** [2-delayed-select/plan.md](../implementation-plans/milestone-1-overlay-ergonomics/2-delayed-select/plan.md)
+
+---
+
+### 3. Hotkeys for the timer
+
+**Status:** Waiting on Stories 1 and 2 (both merged upstream, or at least both on one branch)
+
+**Why:** Stories 1 and 2 ship separately, so neither knows about the other. Once both are in, the
+timer should be reachable from the keyboard like the rest of the bar. The best version of the timer
+may be the one where the countdown starts without the pointer ever leaving the target UI.
+
+**What done looks like:**
+
+1. The timer chip has a shortcut, and its tooltip names it, like every other chip.
+2. A "select after the current delay" chord starts the countdown from the keyboard.
+3. Escape closes the timer's menu if it's open, and otherwise cancels a running countdown, before it
+   falls back to leaving a mode.
+4. Story 1's shortcuts and Story 2's pointer behaviour are unchanged.
+
+**Notes:**
+
+- Branch from `develop` as usual, once `main` has moved to a Steve release that has both stories in
+  it (see `git-flow.md`).
+- The chord table is `src/RoseMcp.Xaml.Tap/tap_keys.h`; dispatch is `OnKey` in `tap_overlay.h`.
+- Story 1's plan Q4 and Q5 ask whether a key reaches the tap while focus is in one of the app's
+  popups or outside the main island. It
+  matters here: the timer exists for flyouts, and a hotkey that dies inside one is half the feature.
+- Plan not written yet.

@@ -1,15 +1,22 @@
 # Plan: Delayed select, like the Snipping Tool's timer
 
 - **Story:** [Milestone 1, story 2](../../../milestones/milestone-1-overlay-ergonomics.md#2-delayed-select-like-the-snipping-tools-timer)
-- **Related:** [Story 1's plan](../1-overlay-toolbar-hotkeys/plan.md). Escape-to-cancel and a
-  "select after delay" hotkey both use its key path.
+- **Related:** [Story 1's plan](../1-overlay-toolbar-hotkeys/plan.md) (hotkeys). This story does
+  not depend on it. Anything that needs both, such as Escape cancelling the countdown, the timer
+  chip's shortcut, or a "select after delay" hotkey, is
+  [Story 3](../../../milestones/milestone-1-overlay-ergonomics.md#3-hotkeys-for-the-timer).
+- **Branch:** `ja/delayed-select`, from `45a35f4`, the same commit `ja/overlay-hotkeys` started
+  from. The two stories go upstream as separate PRs, in either order.
 - **Mockup:** `C:\Users\Drawboard\Pictures\rose\timer-concept.png`, which is local and not in the
   repo. It shows:
   - the timer chip lit rose between Select element and Rulers;
   - a dark drop-down under it, the same panel colour as the bar, with four rows (No delay, 3-, 5- and
     10-second delay), each with a stopwatch icon;
   - the current row marked by a short rose bar on its left edge.
-- **Status:** Ready. Phase A decides whether the rest of the story is possible as written.
+- **Status:** In progress (branch created, no code yet). Phase A decides whether the rest of the
+  story is possible as written.
+- **Revised 12 October 2026:** this plan first assumed it would build on Story 1's hotkeys. It no
+  longer does. The Escape and hotkey steps moved to Story 3.
 - **Last updated:** 12 October 2026
 - **Size:** large. Phase A is a real unknown about popups. The menu is the overlay's first drop-down,
   and the sweep is new drawing.
@@ -41,6 +48,13 @@ including when what is under the pointer is an open flyout, menu or tooltip.
 - Remembering the delay across app restarts.
 
 ## Current understanding
+
+- **No hotkeys on this branch.** It starts from `45a35f4`, before Story 1's code, so there is no
+  key seam, no `tap_keys.h` and no Escape handling. Every way to open, close or cancel is the
+  pointer.
+  - Both stories edit `BuildBar()` and the chip tooltips in `tap_overlay.h`, and both append to
+    `docs/invariants/overlay.md`. Whichever PR merges second resolves a small conflict there.
+  - Neither story should change code only to make that merge easier.
 
 - **Chip row:** `BuildBar()` in `tap_overlay.h` appends `m_idleButton`, `m_selectButton`,
   `m_rulersButton`, then Just my XAML, Deselect, Zoom and Hide. The timer chip goes between Select
@@ -165,7 +179,7 @@ including when what is under the pointer is an open flyout, menu or tooltip.
    - Add `m_timerButton = Chip(TimerIcon(m_delay), L"Delay before select", ...)` after
      `m_selectButton`.
    - `Chrome()` paints it `Accent()` when `m_delay > 0`, and swaps its icon when the delay changes.
-   - Its click opens or closes the menu. During a countdown it cancels instead (step 10).
+   - Its click opens or closes the menu. During a countdown it cancels instead (step 12).
 8. **Menu.** Put this in a new tier-3 header, `tap_tool_timer.h`, holding the delay, the menu, the
    countdown and the sweep, following `RoseZoomTool` and `RoseRulersTool`.
    - Register it in `TapTierTests.Tiers` at tier 3, and include it in both providers next to the
@@ -180,7 +194,6 @@ including when what is under the pointer is an open flyout, menu or tooltip.
    - Closing the menu:
      - Picking a row closes it.
      - The chip toggles it.
-     - Escape closes it (Story 1's key path).
      - Clicking anywhere else closes it. While it is open, a transparent full-bleed layer under the
        menu swallows one press and closes it, the same mechanism as the select capture layer. The
        target's own UI is never open at that point, so this cannot dismiss anything of the app's.
@@ -231,16 +244,13 @@ including when what is under the pointer is an open flyout, menu or tooltip.
 12. **Cancel**, through one `CancelCountdown()` that does what expiry does minus the pick, and is
     safe to call when nothing is running. It is called from:
     - the Idle chip, the Select chip and the timer chip during a countdown;
-    - Escape (Story 1);
     - `Collapse(true)`;
     - `GoIdle()` from any source;
     - `BeginSelect` / `BeginRulers` from the pipe;
     - `SelectByHandle` and `Deselect` (Q4).
 
     It stops and releases the timer, and stops the storyboard. Leave no `Rendering` handler hooked.
-13. **Hotkey.** If Story 1 has landed, add a "select after delay" row to its table, so the countdown
-    can start without the pointer leaving the target UI. Otherwise add a line to Story 1's plan.
-14. **Records.**
+13. **Records.**
     - `docs/invariants/overlay.md`:
       - a pick sees open popups, topmost first, and why;
       - the timed pick puts nothing under the pointer, and why (light-dismiss and pointer-exit);
