@@ -21,7 +21,17 @@
 // observer of pointer movement in the anchor's window, reporting positions in the anchor's own
 // coordinate space, and returns false when the framework offers nothing suitable. Two properties are
 // required of it and neither is negotiable: it must consume nothing, and it must see moves the app
-// has already marked handled. Everything else in this file is an alias swap.
+// has already marked handled.
+//
+// And, for the toolbar's shortcuts:
+//
+//   bool RoseTapWatchKeys(
+//       xaml::UIElement const& anchor,
+//       std::function<bool(RoseKeyPress const&)> onKey);
+//
+// which reports every key going down in the anchor's window, and keeps a key from the app only when
+// onKey returns true. Like the pointer seam it returns false when the framework offers nothing, and
+// losing it costs the shortcuts and nothing else. Everything else in this file is an alias swap.
 
 // The resident in-app toolbar (#18). Installed on the diagnostics UI layer at the first injection and
 // left there for the life of the app, because the point of it is that a person can arm select mode
@@ -32,8 +42,13 @@
 // click reaches the app underneath; only the toolbar, which does have a Background, takes input.
 // Select mode adds a full-bleed capture layer beneath the toolbar, and a Background that is merely
 // transparent *does* hit-test, so that layer collects the pick; removing it restores click-through.
-// That is the whole mechanism -- no input hooks, no window subclassing, and nothing that could
-// collide with a modifier chord the app itself wants to use.
+// That is the whole mechanism for the pointer -- no input hooks and no window subclassing.
+//
+// The keyboard is the one place the overlay listens to input meant for the app, because a shortcut
+// is only useful if it works while the pointer is out over the app. It still subclasses nothing: the
+// provider's key seam is the framework's own key event, every chord is three keys so a two-key
+// shortcut the app uses cannot collide with one, and a key is kept from the app only when it did
+// something here. Escape is the exception to the three keys, and is taken only while a mode is armed.
 //
 // It outlives the RoseTap instance that built it, so it is a leaked singleton rather than a member:
 // its event handlers capture `this`, and a `this` that could be deleted at the end of an injection
@@ -654,6 +669,7 @@ private:
 
 		// Last, because it reads the toolbar's position and the marks it fades.
 		WatchPointer();
+		WatchKeys();
 	}
 
 	// One row: grip, mark, then the modes and Hide. No status text -- the feedback that matters is on
@@ -670,12 +686,17 @@ private:
 		// The three pointer modes first and together, because they are one choice: whatever the pointer
 		// is doing, it is doing one of these, and the accent moves between them. What follows them is a
 		// toggle and an action, which are different kinds of thing and do not belong in that run.
-		m_idleButton = Chip(Glyph(IconIdle, 12.0), L"Idle", [this] { GoIdle(); });
-		m_selectButton = Chip(SelectIcon(), L"Select element", [this] { BeginSelect(false); });
+		m_idleButton = Chip(Glyph(IconIdle, 12.0), RoseWithShortcut(L"Idle", RoseHotkey::Idle).c_str(), [this] { GoIdle(); });
+		m_selectButton = Chip(
+			SelectIcon(),
+			RoseWithShortcut(L"Select element", RoseHotkey::Select).c_str(),
+			[this] { BeginSelect(false); });
 		m_rulersButton = Chip(
 			Glyph(IconRulers, 12.0),
-			L"Rulers -- show the picked element's margin and padding, and measure from it to whatever "
+			RoseWithShortcut(
+				L"Rulers -- show the picked element's margin and padding, and measure from it to whatever "
 				L"the pointer is over. Click to anchor somewhere else",
+				RoseHotkey::Rulers).c_str(),
 			[this] { BeginRulers(); });
 		m_bar.Children().Append(m_idleButton);
 		m_bar.Children().Append(m_selectButton);
@@ -683,7 +704,9 @@ private:
 
 		m_myXamlButton = Chip(
 			Glyph(IconMyXaml, 12.0),
-			L"Just my XAML -- pick the element declared in the app's own markup, not a control template's parts",
+			RoseWithShortcut(
+				L"Just my XAML -- pick the element declared in the app's own markup, not a control template's parts",
+				RoseHotkey::JustMyXaml).c_str(),
 			[this] { ToggleMyXaml(); });
 		m_bar.Children().Append(m_myXamlButton);
 
@@ -692,7 +715,7 @@ private:
 		// somebody else's application.
 		m_deselectButton = Chip(
 			Glyph(IconDeselect, 12.0),
-			L"Deselect -- clear the picked element and its mark",
+			RoseWithShortcut(L"Deselect -- clear the picked element and its mark", RoseHotkey::Deselect).c_str(),
 			[this] { Deselect(); });
 		m_bar.Children().Append(m_deselectButton);
 
@@ -718,7 +741,7 @@ private:
 		xcontrols::Grid::SetColumn(m_bar, 0);
 		row.Children().Append(m_bar);
 
-		auto hide = Chip(Glyph(IconHide, 12.0), L"Hide", [this] { Collapse(true); });
+		auto hide = Chip(Glyph(IconHide, 12.0), RoseWithShortcut(L"Hide", RoseHotkey::Hide).c_str(), [this] { Collapse(true); });
 		hide.Margin(xaml::Thickness{ 0, 3, 4, 3 });
 		xcontrols::Grid::SetColumn(hide, 1);
 		row.Children().Append(hide);
@@ -732,6 +755,9 @@ private:
 		m_thumb.Background(Brush(0x00, 0x00, 0x00, 0x00));
 		m_thumb.Padding(xaml::Thickness{ 8, 5, 8, 5 });
 		m_thumb.Child(Dots(0xB8));
+		xcontrols::ToolTipService::SetToolTip(
+			m_thumb,
+			winrt::box_value(winrt::hstring{ RoseWithShortcut(L"Show the toolbar", RoseHotkey::Hide) }));
 		AttachDrag(m_thumb);
 		m_thumb.Tapped(
 			[this](winrt::Windows::Foundation::IInspectable const&, xinput::TappedRoutedEventArgs const& e)
@@ -1238,6 +1264,85 @@ private:
 		if (!watched) Log(L"overlay: no pointer source; the marks will not fade with proximity");
 	}
 
+	// The toolbar's shortcuts, through the provider's key seam. Losing it costs the shortcuts and
+	// nothing else, the same trade the pointer seam makes for the fade.
+	void WatchKeys()
+	{
+		const auto watched = RoseTapWatchKeys(
+			m_layer,
+			[this](RoseKeyPress const& press)
+			{
+				try
+				{
+					return OnKey(press);
+				}
+				catch (winrt::hresult_error const&)
+				{
+					// Runs on every key press in somebody else's application. Never throw out of it.
+					return false;
+				}
+			});
+
+		Log(watched ? L"overlay: watching keys for the toolbar's shortcuts"
+					: L"overlay: no key source; the toolbar's shortcuts will not work");
+	}
+
+	// Does what the chord's chip would do, and says whether it did anything -- which is what decides
+	// whether the key is kept from the app. A key the overlay has no use for at this moment is the
+	// app's, even when it is one of the chords.
+	bool OnKey(RoseKeyPress const& press)
+	{
+		// Once, so a target where the shortcuts do nothing can be told apart from one where no key
+		// ever arrived: the seam on WinUI 3 is the framework's keyboard source for the island, and
+		// whether it sees keys the app has handled has not been measured.
+		if (!m_sawKey)
+		{
+			m_sawKey = true;
+			Log(L"overlay: first key from the key seam");
+		}
+
+		const auto action = RoseHotkeyFor(press);
+		if (action == RoseHotkey::None) return false;
+
+		// Escape is the one key every app uses, so the overlay takes it only while a mode is
+		// capturing the pointer -- which is also when the app cannot be using it, since nothing
+		// reaches the app through the capture layer.
+		const bool armed = m_pointing != Pointing::None;
+		if (action == RoseHotkey::Idle && !armed) return false;
+
+		const bool zoomStep = action == RoseHotkey::ZoomIn || action == RoseHotkey::ZoomOut;
+
+		// Held down, a toggle would flicker for as long as the key was. Zoom steps are the exception:
+		// holding zoom-in to go from 2x to 32x is what holding a key is for. A repeat of a chord the
+		// overlay owns is still kept from the app, so the app does not see the tail of a held chord
+		// whose first press it never saw.
+		if (press.Repeat && !zoomStep) return true;
+
+		bool acted = true;
+		switch (action)
+		{
+			case RoseHotkey::Idle: GoIdle(); break;
+			case RoseHotkey::Select: acted = BeginSelect(false); break;
+			case RoseHotkey::Rulers: acted = BeginRulers(); break;
+			case RoseHotkey::JustMyXaml: ToggleMyXaml(); break;
+			case RoseHotkey::Deselect: acted = Deselect(); break;
+			case RoseHotkey::Hide: Collapse(!Collapsed()); break;
+			default: acted = m_zoomTool.OnHotkey(action); break;
+		}
+
+		if (!press.Repeat)
+		{
+			Log(std::wstring(L"overlay: shortcut ") + RoseHotkeyName(action) + (acted ? L"" : L" (nothing to do)"));
+		}
+
+		return acted;
+	}
+
+	bool Collapsed() const
+	{
+		return m_rows && m_rows.Visibility() == xaml::Visibility::Collapsed;
+	}
+
 	// Both marks fade on the same rule: near the pointer they are legible, away from it they are a
 	// hint. Only a change of state starts an animation -- this runs on every pointer move, and
 	// restarting a storyboard sixty times a second over an app somebody is using is not acceptable.
@@ -1602,6 +1707,9 @@ private:
 	// Whether the toolbar has had its one and only automatic placement.
 	bool m_placed = false;
 	Pointing m_pointing = Pointing::None;
+
+	// Whether the key seam has delivered anything yet. See OnKey.
+	bool m_sawKey = false;
 	std::set<Operation> m_operations;
 	int m_traces = 0;
 	bool m_includeAllElements = false;

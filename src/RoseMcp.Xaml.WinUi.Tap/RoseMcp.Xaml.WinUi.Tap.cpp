@@ -41,6 +41,7 @@ static const wchar_t* const RoseTapLogFile = L"\\rosemcp.xaml.winui.tap.log";
 // of an include order that is load-bearing rather than tidy: everything above the projections is
 // there because it names none, and would stop compiling if it did.
 #include "../RoseMcp.Xaml.Tap/tap_channel.h"
+#include "../RoseMcp.Xaml.Tap/tap_keys.h" // the key seam below speaks in RoseKeyPress
 #include "../RoseMcp.Xaml.Tap/tap_diagnostics.h"
 
 // The same root as a string, for the two places that compare a CLR type name rather than a type.
@@ -83,6 +84,8 @@ static const CLSID CLSID_RoseTap =
 #include <robuffer.h> // IBufferByteAccess: the only way to write into a WriteableBitmap's buffer
 #include <winrt/Microsoft.UI.Xaml.Input.h>
 #include <winrt/Microsoft.UI.Input.h>   // InputPointerSource, which is what replaces CoreWindow
+#include <winrt/Windows.System.h>       // VirtualKey, for the shortcut seam
+#include <winrt/Windows.UI.Core.h>      // CoreVirtualKeyStates, which InputKeyboardSource still answers in
 #include <winrt/Microsoft.UI.Content.h> // ContentIsland, which is what it is asked of
 #include <winrt/Microsoft.UI.Dispatching.h> // DispatcherQueue, for getting back onto the UI thread
 
@@ -138,6 +141,48 @@ static bool RoseTapGetUiLayerForRoot(
 	return SUCCEEDED(hr) && *layer;
 }
 
+// The content island an element is drawn in, which is what both input seams below observe. The
+// prefix names the seam asking, so the log says which of them gave up and at which step.
+static winrt::Microsoft::UI::Content::ContentIsland RoseTapIslandOf(xaml::UIElement const& anchor, const wchar_t* seam)
+{
+	const std::wstring prefix = std::wstring(seam) + L": ";
+
+	// Each step says so on its own. The caller only reports that the seam is off, and four ways to
+	// arrive at that answer are not the same finding -- which is the lesson the rest of this
+	// provider was taught the hard way.
+	if (!anchor)
+	{
+		Log(prefix + L"no anchor element");
+		return nullptr;
+	}
+
+	const auto root = anchor.XamlRoot();
+	if (!root)
+	{
+		Log(prefix + L"the anchor has no XamlRoot");
+		return nullptr;
+	}
+
+	auto island = root.ContentIsland();
+	if (!island)
+	{
+		// XamlRoot.ContentIsland answers only for a XamlIsland-based content root -- XamlRoot_Partial.cpp
+		// asks GetContentRootNoRef()->GetXamlIslandRootNoRef() and returns null otherwise -- and the
+		// diagnostics UI layer this anchors on does not report one. The islands the thread owns are the
+		// same content reached another way, and this always runs on the UI thread, so asking is valid.
+		// Measured rather than assumed, twice over: the thread owns exactly one island, so taking the
+		// first is not a guess, and a sweep of 40 synthetic moves across the window was observed as 40
+		// through the source acquired from it. Without this fallback the seams go quiet on every WinUI
+		// target, and a seam that costs only the fade is the kind of silence that survives for months.
+		const auto owned = winrt::Microsoft::UI::Content::ContentIsland::FindAllForCurrentThread();
+		Log(prefix + L"the XamlRoot has no ContentIsland; the thread owns " + std::to_wstring(owned.size()));
+		if (owned.size() > 0) island = owned[0];
+	}
+
+	if (!island) Log(prefix + L"no ContentIsland to observe");
+	return island;
+}
+
 // The overlay's one genuine seam (#75): a passive observer of pointer movement, used for the
 // proximity fade that gets the marks out of the way. Two properties are required, and neither is
 // negotiable -- it must consume nothing, and it must see moves the app has already marked handled.
@@ -159,43 +204,8 @@ static bool RoseTapWatchPointer(
 	std::function<void(winrt::Windows::Foundation::Point const&)> onMove,
 	std::function<void()> onExit)
 {
-	// Each step says so on its own. The caller only reports that the fade is off, and four ways to
-	// arrive at that answer are not the same finding -- which is the lesson the rest of this
-	// provider was taught the hard way.
-	if (!anchor)
-	{
-		Log(L"pointer: no anchor element");
-		return false;
-	}
-
-	const auto root = anchor.XamlRoot();
-	if (!root)
-	{
-		Log(L"pointer: the anchor has no XamlRoot");
-		return false;
-	}
-
-	auto island = root.ContentIsland();
-	if (!island)
-	{
-		// XamlRoot.ContentIsland answers only for a XamlIsland-based content root -- XamlRoot_Partial.cpp
-		// asks GetContentRootNoRef()->GetXamlIslandRootNoRef() and returns null otherwise -- and the
-		// diagnostics UI layer this anchors on does not report one. The islands the thread owns are the
-		// same content reached another way, and this always runs on the UI thread, so asking is valid.
-		// Measured rather than assumed, twice over: the thread owns exactly one island, so taking the
-		// first is not a guess, and a sweep of 40 synthetic moves across the window was observed as 40
-		// through the source acquired from it. Before this fallback the seam went quiet on every WinUI
-		// target and cost only the fade, which is the kind of silence that survives for months.
-		const auto owned = winrt::Microsoft::UI::Content::ContentIsland::FindAllForCurrentThread();
-		Log(L"pointer: the XamlRoot has no ContentIsland; the thread owns " + std::to_wstring(owned.size()));
-		if (owned.size() > 0) island = owned[0];
-	}
-
-	if (!island)
-	{
-		Log(L"pointer: no ContentIsland to observe");
-		return false;
-	}
+	const auto island = RoseTapIslandOf(anchor, L"pointer");
+	if (!island) return false;
 
 	const auto source = winrt::Microsoft::UI::Input::InputPointerSource::GetForIsland(island);
 	if (!source)
@@ -216,6 +226,51 @@ static bool RoseTapWatchPointer(
 			winrt::Microsoft::UI::Input::PointerEventArgs const&)
 		{
 			onExit();
+		});
+
+	return true;
+}
+
+// The overlay's second input seam: every key going down on the island, for the toolbar's shortcuts.
+//
+// InputKeyboardSource on the same island the pointer seam observes, because it is the keyboard half
+// of the same source and WinUI 3 has nothing like UWP's AcceleratorKeyActivated. Whether it sees a key
+// before the app's own handlers, and whether Handled keeps the key from the app, has not been measured
+// the way the pointer source was -- the overlay logs the first key this delivers, so a target where
+// the shortcuts do nothing says which half failed: no line means this never fired.
+//
+// Handled is set only when the overlay says the key did something: a chord nobody acted on is the app's.
+static bool RoseTapWatchKeys(xaml::UIElement const& anchor, std::function<bool(RoseKeyPress const&)> onKey)
+{
+	const auto island = RoseTapIslandOf(anchor, L"keys");
+	if (!island) return false;
+
+	const auto source = winrt::Microsoft::UI::Input::InputKeyboardSource::GetForIsland(island);
+	if (!source)
+	{
+		Log(L"keys: the ContentIsland has no InputKeyboardSource");
+		return false;
+	}
+
+	source.KeyDown(
+		[onKey](winrt::Microsoft::UI::Input::InputKeyboardSource const&,
+			winrt::Microsoft::UI::Input::KeyEventArgs const& e)
+		{
+			const auto down = [](winrt::Windows::System::VirtualKey key)
+			{
+				using winrt::Windows::UI::Core::CoreVirtualKeyStates;
+				const auto state = winrt::Microsoft::UI::Input::InputKeyboardSource::GetKeyStateForCurrentThread(key);
+				return (state & CoreVirtualKeyStates::Down) == CoreVirtualKeyStates::Down;
+			};
+
+			RoseKeyPress press;
+			press.Key = static_cast<uint32_t>(e.VirtualKey());
+			press.Control = down(winrt::Windows::System::VirtualKey::Control);
+			press.Shift = down(winrt::Windows::System::VirtualKey::Shift);
+			press.Alt = down(winrt::Windows::System::VirtualKey::Menu);
+			press.Repeat = e.KeyStatus().WasKeyDown;
+
+			if (onKey(press)) e.Handled(true);
 		});
 
 	return true;

@@ -128,3 +128,23 @@ Read before changing `src/RoseMcp.Xaml.Tap/tap_overlay.h` or `tap_measure.h`.
   confident wrong answer about an element laid out perfectly well, and `TransformToVisual` across two
   roots does not fail in a way that says otherwise. Drawing anyway would put the mark at the right
   coordinates in the wrong window, which is the failure #45 and #51 are already about.
+- **The shortcuts listen to keys meant for the app, so they take a key only when it did something.**
+  A shortcut is only worth having if it works while the pointer is out over the app, which means
+  hearing keys aimed at the app's own controls. So the provider's `RoseTapWatchKeys` reports every
+  key going down -- `AcceleratorKeyActivated` on UWP, which is raised before XAML routes the key, and
+  the island's `InputKeyboardSource` on WinUI 3 -- and the key is kept from the app only when the
+  overlay acted on it. Three things follow, and each is what keeps a diagnostics overlay from
+  breaking the app it sits on. Every chord is Ctrl+Shift plus a key, with the modifiers matched
+  exactly, so a two-key shortcut the app uses cannot collide and an app's four-key chord stays its
+  own. Escape is taken only while a pointer mode is armed, when nothing reaches the app through the
+  capture layer anyway; in idle it is the app's. And Z is deliberately not zoom: Ctrl+Shift+Z is redo
+  in a great many apps, text boxes included.
+  <br>
+  The chords live in one table in `tap_keys.h`, which both the dispatch and the tooltips read, so the
+  key a tooltip names is the key that works. It is tier 1 because a key is a virtual-key code and
+  three modifiers on both frameworks, and the providers include it themselves because their seam is
+  defined before the overlay is.
+  <br>
+  The WinUI 3 seam has not been measured against keys the app has already handled, the way the
+  pointer source was. The overlay logs the first key the seam delivers, so a WinUI target where the
+  shortcuts do nothing says which half failed: no such line means the source never fired.

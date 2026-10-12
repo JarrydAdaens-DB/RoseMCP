@@ -30,6 +30,7 @@ public sealed partial class TapTierTests
 		// Names nothing external.
 		["tap_channel.h"] = 1,
 		["tap_measure.h"] = 1,
+		["tap_keys.h"] = 1,
 
 		// Names only xamlOM, which both frameworks declare identically, so it compiles once.
 		["tap_diagnostics.h"] = 2,

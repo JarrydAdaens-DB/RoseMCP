@@ -33,6 +33,7 @@ static const wchar_t* const RoseTapLogFile = L"\\rosemcp.xaml.uwp.tap.log";
 // start of an include order that is load-bearing rather than tidy: everything above the projections
 // is there because it names none, and would stop compiling if it did.
 #include "../RoseMcp.Xaml.Tap/tap_channel.h"
+#include "../RoseMcp.Xaml.Tap/tap_keys.h" // the key seam below speaks in RoseKeyPress
 #include "../RoseMcp.Xaml.Tap/tap_diagnostics.h"
 
 // The same root as a string, for the two places that compare a CLR type name rather than a type.
@@ -70,7 +71,8 @@ static const CLSID CLSID_RoseTap =
 #include <winrt/Windows.UI.Xaml.Media.Imaging.h> // RenderTargetBitmap and WriteableBitmap, for the magnifier
 #include <winrt/Windows.Storage.Streams.h>       // IBuffer, which is how pixels come back
 #include <robuffer.h> // IBufferByteAccess: the only way to write into a WriteableBitmap's buffer
-#include <winrt/Windows.UI.Core.h>        // WindowSizeChangedEventArgs
+#include <winrt/Windows.UI.Core.h>        // WindowSizeChangedEventArgs, AcceleratorKeyEventArgs
+#include <winrt/Windows.System.h>         // VirtualKey, for the shortcut seam's modifiers
 #include <winrt/Windows.UI.Input.h>
 #include <winrt/Windows.UI.Xaml.Input.h>
 
@@ -130,6 +132,56 @@ static bool RoseTapWatchPointer(
 		[onExit](winrt::Windows::UI::Core::CoreWindow const&, winrt::Windows::UI::Core::PointerEventArgs const&)
 		{
 			onExit();
+		});
+
+	return true;
+}
+
+// The overlay's second input seam: every key going down in the window, for the toolbar's shortcuts.
+//
+// AcceleratorKeyActivated rather than CoreWindow.KeyDown, because it is raised before XAML routes the
+// key anywhere -- so a shortcut works whichever of the app's controls has focus, a TextBox included,
+// and whatever the app's own handlers do with the key afterwards. Setting Handled is what stops the key
+// reaching the app, and it is set only when the overlay says the key did something: a chord nobody
+// acted on is the app's.
+//
+// The anchor goes unused, as it does for the pointer: the CoreWindow is ambient here.
+static bool RoseTapWatchKeys(xaml::UIElement const& anchor, std::function<bool(RoseKeyPress const&)> onKey)
+{
+	(void)anchor;
+
+	const auto current = xaml::Window::Current();
+	if (!current) return false;
+
+	const auto window = current.CoreWindow();
+	if (!window) return false;
+
+	const auto down = [window](winrt::Windows::System::VirtualKey key)
+	{
+		using winrt::Windows::UI::Core::CoreVirtualKeyStates;
+		return (window.GetKeyState(key) & CoreVirtualKeyStates::Down) == CoreVirtualKeyStates::Down;
+	};
+
+	window.Dispatcher().AcceleratorKeyActivated(
+		[onKey, down](winrt::Windows::UI::Core::CoreDispatcher const&, winrt::Windows::UI::Core::AcceleratorKeyEventArgs const& e)
+		{
+			using winrt::Windows::UI::Core::CoreAcceleratorKeyEventType;
+
+			// SystemKeyDown is a key going down with Alt held, which no chord uses but which has to
+			// reach RoseHotkeyFor to be refused on its modifiers rather than here on its event type.
+			const auto type = e.EventType();
+			const bool keyDown = type == CoreAcceleratorKeyEventType::KeyDown
+				|| type == CoreAcceleratorKeyEventType::SystemKeyDown;
+			if (!keyDown) return;
+
+			RoseKeyPress press;
+			press.Key = static_cast<uint32_t>(e.VirtualKey());
+			press.Control = down(winrt::Windows::System::VirtualKey::Control);
+			press.Shift = down(winrt::Windows::System::VirtualKey::Shift);
+			press.Alt = down(winrt::Windows::System::VirtualKey::Menu);
+			press.Repeat = e.KeyStatus().WasKeyDown;
+
+			if (onKey(press)) e.Handled(true);
 		});
 
 	return true;

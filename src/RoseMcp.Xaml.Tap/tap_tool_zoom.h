@@ -73,10 +73,40 @@ public:
 	{
 		m_zoomButton = Chip(
 			Glyph(IconZoom, 12.0),
-			L"Magnify -- scale the app, or inspect its pixels and read the colour under the pointer",
+			RoseWithShortcut(
+				L"Magnify -- scale the app, or inspect its pixels and read the colour under the pointer",
+				RoseHotkey::Zoom).c_str(),
 			[this] { ToggleZoom(); });
 
 		return m_zoomButton;
+	}
+
+	// The shortcuts for the chips this tool owns, and whether the key did anything. The steps are
+	// refused while magnification is off, so the key goes to the app rather than changing a factor
+	// nobody can see; and at either end of the range, for the same reason the chip is disabled there.
+	bool OnHotkey(RoseHotkey action)
+	{
+		const int before = m_zoomFactor;
+
+		switch (action)
+		{
+			case RoseHotkey::Zoom:
+				ToggleZoom();
+				return true;
+			case RoseHotkey::ZoomIn:
+				if (!Active()) return false;
+				ZoomBy(1);
+				break;
+			case RoseHotkey::ZoomOut:
+				if (!Active()) return false;
+				ZoomBy(-1);
+				break;
+			default:
+				return false;
+		}
+
+		m_surface.Chrome();
+		return m_zoomFactor != before;
 	}
 
 	// Whether magnification is on, which the overlay asks because a mode nobody requested still
@@ -131,8 +161,10 @@ public:
 			Glyph(IconPixels, 12.0),
 			L"Pixel lens -- a nearest-neighbour magnifier that follows the pointer, leaving the app untouched",
 			[this] { SetZoomMode(Zoom::Lens); });
-		m_zoomOutButton = Chip(Glyph(IconZoomOut, 12.0), L"Zoom out", [this] { ZoomBy(-1); });
-		m_zoomInButton = Chip(Glyph(IconZoomIn, 12.0), L"Zoom in", [this] { ZoomBy(1); });
+		m_zoomOutButton = Chip(
+			Glyph(IconZoomOut, 12.0), RoseWithShortcut(L"Zoom out", RoseHotkey::ZoomOut).c_str(), [this] { ZoomBy(-1); });
+		m_zoomInButton = Chip(
+			Glyph(IconZoomIn, 12.0), RoseWithShortcut(L"Zoom in", RoseHotkey::ZoomIn).c_str(), [this] { ZoomBy(1); });
 
 		m_zoomRow.Children().Append(m_scaleButton);
 		m_zoomRow.Children().Append(m_pixelButton);
