@@ -218,3 +218,44 @@ accessibility, Hot Reload status). Story 2's timer chip, unless Story 2 lands fi
 - `docs/invariants/xaml-tap-lifecycle.md` covers threading. Everything here runs on the UI thread.
 - VS bindings (Q1): none in the in-app toolbar. Read from the markup embedded in VS 18's UWP and
   WinUI taps on 12 October 2026.
+
+## Execution Log
+
+**12 October 2026**, on `ja/overlay-hotkeys` (commits `3e5e063` and `879ba4c`).
+
+What changed from the plan:
+
+- **Zoom is Ctrl+Shift+G, not Z.** Ctrl+Shift+Z is redo in many apps, text boxes included, and
+  taking it would break them.
+- **The chord table is tier 1 (`tap_keys.h`), not tier 3.** A key is a virtual-key code plus
+  modifiers on both frameworks, so it needs no projection. Both providers include it, because their
+  key seam speaks in `RoseKeyPress` and is defined before the overlay.
+- **Hide is a toggle** (Ctrl+Shift+H shows the bar again), and the collapsed grip has a tooltip
+  naming it.
+- **The numeric keypad's plus and minus** step the zoom too. Tooltips list only the main-block keys.
+- **The tooltip puts the shortcut after the chip's name, before the " -- " explanation.** Appended
+  after a sentence, nobody reads it.
+- **Held keys:** toggles act once and swallow the repeats; zoom steps repeat.
+- **The WinUI island lookup** is shared by both seams (`RoseTapIslandOf`).
+- **Installing the key seam is guarded.** `InputKeyboardSource::GetForIsland` lives on a later
+  statics interface, so on an older Windows App SDK runtime it throws. Unguarded, that throw failed
+  the whole toolbar install.
+- **Q4 is still open.** The WinUI seam is unmeasured against keys the app has already handled. The
+  overlay logs `overlay: first key from the key seam` once, so a target where nothing works shows
+  whether the source fired at all.
+- **Not done:** no decision record. The plan conditioned one on swallowing, and the invariant in
+  `overlay.md` already carries the reasoning. Wiki: not touched.
+
+Checks:
+
+- Both providers build at x64 Debug.
+- Unit suite: 1810 passed, including `TapTierTests` with `tap_keys.h` registered.
+- `dotnet format --verify-no-changes` and `Check-Comments.ps1` are clean.
+- Live-app injection tests:
+  - `LiveAppUwpOverlayTests`: 5 of 5 passed.
+  - `LiveAppWinUiTests`: 8 of 8 passed.
+  - Both taps' logs say `overlay: watching keys for the toolbar's shortcuts`, so both seams install
+    without throwing on the probe apps.
+  - These prove the seam installs and the toolbar still works. They do not prove a key press
+    arrives: nothing in the suites injects input.
+- Not yet done: a manual try-out in a real app (deploy from the branch).

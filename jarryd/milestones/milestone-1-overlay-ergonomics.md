@@ -3,18 +3,18 @@
 **Theme:** make the in-app overlay (the toolbar the XAML tap draws over a debugged app) quicker to
 drive, so picking and measuring elements doesn't mean reaching for the mouse every time.
 
-**Status:** Not started
+**Status:** In progress
 
 | # | Story | Status |
 | --- | --- | --- |
-| 1 | [Hotkeys for the overlay toolbar](#1-hotkeys-for-the-overlay-toolbar) | Planned |
+| 1 | [Hotkeys for the overlay toolbar](#1-hotkeys-for-the-overlay-toolbar) | In progress |
 | 2 | [Delayed select, like the Snipping Tool's timer](#2-delayed-select-like-the-snipping-tools-timer) | Planned |
 
 ---
 
 ### 1. Hotkeys for the overlay toolbar
 
-**Status:** Planned
+**Status:** In progress (built on `ja/overlay-hotkeys`, waiting on a try-out)
 
 **Why:** every overlay action is a click on a small chip floating over someone else's app. Switching
 between Select and Rulers while inspecting a layout is constant, and doing it by mouse breaks the
