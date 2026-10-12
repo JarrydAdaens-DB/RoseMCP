@@ -88,8 +88,19 @@ Read before changing `src/RoseMcp.Xaml.Tap/tap_overlay.h` or `tap_measure.h`.
   through an open flyout and reports the page behind it. `Under` walks
   `GetOpenPopupsForXamlRoot` first, from the end of its list because the call does not say which
   popup is on top and the last opened is the likely one, then the content. `Beneath` takes the first
-  usable element and `Record` writes the stack in that order. Hover and click both go through it, so
-  they cannot disagree about what is under the pointer.
+  usable element and `Record` writes the stack in that order. Hover, click and the timed pick all go
+  through it, so none of them can disagree about what is under the pointer.
+- **The timed pick puts nothing under the pointer, and the countdown has one clock.** With a delay set
+  (`tap_tool_timer.h`), Select counts down instead of arming, and at zero `PickAt` hit-tests where
+  the pointer already is. Arming select mode then instead would insert the capture layer under the
+  pointer, and the pointer-exit that sends the control beneath is what ends a tooltip or a hover
+  state; a click would dismiss a light-dismiss flyout. So nothing is captured during the countdown,
+  the mode stays `idle`, and the sweep is drawn on the chip, away from the pointer. The pick is a
+  `DispatcherTimer` stopped first thing in its tick, and the sweep and digit a storyboard of the same
+  length started in the same call. Every exit -- Idle, Select or the timer chip again, arming either
+  mode from the toolbar or the pipe, select-by-handle, deselect, hiding the toolbar -- goes through
+  one `Finish`, which stops both. The delay menu is a `Border` on the overlay's canvas with a
+  transparent shield under it, not a `Flyout`, for the popup reason above.
 - **No padding is not padding of zero, and XAML declares `Padding` on no common base.** `Control`,
   `Border`, `TextBlock`, `RichTextBlock`, `ContentPresenter`, `StackPanel`, `Grid` and `RelativePanel`
   each declare their own, so the box model asks those projections in turn, and a type with none is

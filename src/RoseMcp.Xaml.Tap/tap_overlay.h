@@ -189,6 +189,7 @@ public:
 	{
 		Select,
 		Rulers,
+		Timer,
 	};
 
 	void BeginOperation(Operation operation)
@@ -250,6 +251,7 @@ public:
 	// and stop capturing my clicks".
 	void GoIdle() override
 	{
+		CancelCountdown();
 		HideCapture();
 		SetPointing(Pointing::None);
 		m_pick.Hover(nullptr, std::wstring());
@@ -321,6 +323,7 @@ public:
 	// was selected" rather than having both read as success.
 	bool Deselect() override
 	{
+		CancelCountdown();
 		const bool had = m_pick.Clear(nullptr);
 
 		Log(had ? L"overlay: selection cleared" : L"overlay: deselect with nothing selected");
@@ -369,6 +372,9 @@ public:
 	bool SelectByHandle(InstanceHandle handle) override
 	{
 		if (!m_diagnostics || handle == 0) return false;
+
+		// An agent naming an element outright beats a countdown somebody may have forgotten about.
+		CancelCountdown();
 
 		::IInspectable* raw = nullptr;
 		if (FAILED(m_diagnostics->GetIInspectableFromHandle(handle, &raw)) || !raw)
@@ -422,6 +428,10 @@ private:
 	bool Point(Pointing mode)
 	{
 		if (!m_root || mode == Pointing::None) return false;
+
+		// Arming a mode, from the toolbar or the pipe, is a decision about the pointer now, so a
+		// countdown that would pick later is cancelled rather than left to fire into the mode.
+		CancelCountdown();
 
 		// Switching between the modes keeps the layer that is already up rather than replacing it.
 		// Arming is what a caller waits on, and what it waits for is a layer XAML has arranged --
@@ -671,7 +681,7 @@ private:
 		// is doing, it is doing one of these, and the accent moves between them. What follows them is a
 		// toggle and an action, which are different kinds of thing and do not belong in that run.
 		m_idleButton = Chip(Glyph(IconIdle, 12.0), L"Idle", [this] { GoIdle(); });
-		m_selectButton = Chip(SelectIcon(), L"Select element", [this] { BeginSelect(false); });
+		m_selectButton = Chip(SelectIcon(), L"Select element", [this] { SelectChip(); });
 		m_rulersButton = Chip(
 			Glyph(IconRulers, 12.0),
 			L"Rulers -- show the picked element's margin and padding, and measure from it to whatever "
@@ -679,6 +689,9 @@ private:
 			[this] { BeginRulers(); });
 		m_bar.Children().Append(m_idleButton);
 		m_bar.Children().Append(m_selectButton);
+
+		// Straight after Select, because it changes what Select does; it is not a mode of its own.
+		m_bar.Children().Append(m_timerTool.Button());
 		m_bar.Children().Append(m_rulersButton);
 
 		m_myXamlButton = Chip(
@@ -987,6 +1000,10 @@ private:
 	{
 		if (!m_rows || !m_thumb) return;
 
+		// The exception to the modes running on: a countdown nobody can see is one nobody can cancel,
+		// and its menu would hang under a toolbar that is gone.
+		if (collapsed) m_timerTool.Dismiss();
+
 		m_rows.Visibility(collapsed ? xaml::Visibility::Collapsed : xaml::Visibility::Visible);
 		m_thumb.Visibility(collapsed ? xaml::Visibility::Visible : xaml::Visibility::Collapsed);
 	}
@@ -1036,6 +1053,72 @@ private:
 		// Its own buttons are its own business: which of them wears the accent depends on state
 		// this no longer holds.
 		m_zoomTool.RefreshChrome();
+		m_timerTool.RefreshChrome();
+	}
+
+	// Select with a delay set counts down instead of arming, and a second press during the countdown
+	// is the way out of it.
+	void SelectChip()
+	{
+		if (m_timerTool.Running())
+		{
+			CancelCountdown();
+			return;
+		}
+
+		if (m_timerTool.Delay() <= 0)
+		{
+			BeginSelect(false);
+			return;
+		}
+
+		// Out of any mode first: the countdown exists so the app can be used while it runs, and a
+		// capture layer would take every click meant for it.
+		GoIdle();
+		m_includeAllElements = false;
+		m_timerTool.Start();
+	}
+
+	void CancelCountdown()
+	{
+		m_timerTool.Cancel();
+	}
+
+	// The countdown reached zero: pick where the pointer is, putting nothing under it first. That is
+	// the point of the delay -- a capture layer, a click or anything drawn under the pointer would
+	// send the app the exit or the click that dismisses the flyout being picked.
+	void CountdownEnded()
+	{
+		try
+		{
+			const auto point = m_pointer;
+
+			const bool unknown = point.X < 0 || point.Y < 0;
+			if (unknown)
+			{
+				Log(L"overlay: countdown ended with the pointer outside the window; nothing picked");
+				return;
+			}
+
+			// Beneath would answer with whatever app element sits under the toolbar, which nobody
+			// pointed at.
+			if (Contains(PanelRect(), point))
+			{
+				Log(L"overlay: countdown ended with the pointer on the toolbar; nothing picked");
+				return;
+			}
+
+			if (!PickAt(point))
+			{
+				Log(L"overlay: countdown ended over nothing pickable");
+			}
+
+			Chrome();
+		}
+		catch (winrt::hresult_error const& error)
+		{
+			Log(std::wstring(L"overlay: timed pick failed: ") + error.message().c_str());
+		}
 	}
 
 	/// Whether an element was declared in the app's own markup.
@@ -1419,14 +1502,7 @@ private:
 			// A click is a pointer position, and not always preceded by a move -- a touch, or the
 			// pointer arriving and pressing in one gesture, produces no PointerMoved at all.
 			m_pointer = point;
-			winrt::Windows::Foundation::Rect rect{};
-			if (const auto element = Beneath(point, rect))
-			{
-				// The picked element keeps its outline after select mode ends: that persistent mark is
-				// the evidence of what "the selected element" now means, for the person and the agent.
-				const bool drawn = m_pick.Take(element, Record(element, point), rect);
-				Log(L"overlay: selection outline " + std::wstring(drawn ? L"drawn" : L"NOT drawn"));
-			}
+			PickAt(point);
 		}
 		catch (winrt::hresult_error const& error)
 		{
@@ -1438,6 +1514,21 @@ private:
 		// arm, click, arm again for every element somebody wants to measure from.
 		if (m_pointing == Pointing::Select) GoIdle();
 		else m_rulersTool.ClearMeasurement(); // The pointer is over the new anchor, so there is nothing to measure to.
+	}
+
+	// Picks whatever is under a point, the way a click there would. Shared by the click and the timed
+	// pick, so the two cannot come to different answers; returns whether anything was picked.
+	bool PickAt(winrt::Windows::Foundation::Point const& point)
+	{
+		winrt::Windows::Foundation::Rect rect{};
+		const auto element = Beneath(point, rect);
+		if (!element) return false;
+
+		// The picked element keeps its outline after select mode ends: that persistent mark is the
+		// evidence of what "the selected element" now means, for the person and the agent.
+		const bool drawn = m_pick.Take(element, Record(element, point), rect);
+		Log(L"overlay: selection outline " + std::wstring(drawn ? L"drawn" : L"NOT drawn"));
+		return true;
 	}
 
 	/// Writes the selection for an element that arrived from the tree rather than from a click.
@@ -1675,6 +1766,17 @@ private:
 	// nothing more, so handing it over from an initialiser is safe.
 	RoseZoomTool m_zoomTool{ *this };
 	RoseRulersTool m_rulersTool{ *this, m_pick };
+
+	// The delay before select. Its busy signal is an operation like any other, so the panel stays
+	// legible while its menu is open or a countdown is running with the pointer out in the app.
+	RoseTimerTool m_timerTool{
+		*this,
+		[this] { CountdownEnded(); },
+		[this](bool busy)
+		{
+			if (busy) BeginOperation(Operation::Timer);
+			else EndOperation(Operation::Timer);
+		} };
 };
 
 // Leaked deliberately: see the note on RoseOverlay. Only ever touched on the app's UI thread.
