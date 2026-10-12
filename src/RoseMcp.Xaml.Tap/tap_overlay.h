@@ -1289,10 +1289,60 @@ private:
 	// able to tell those apart, and neither drawn alone does it.
 
 
+	// Everything under a point, topmost first: the open popups, then the page.
+	//
+	// Popups first because they draw over the page, and a pick has to mean what a click there would
+	// land on. Flyouts, menus and tooltips are not under XamlRoot.Content() at all -- they live in the
+	// popup root beside it -- so a hit test of the content alone looks straight through an open
+	// flyout and reports the page behind it. That is the wrong answer exactly where it matters most,
+	// since the UI that dismisses itself on a click elsewhere is the UI hardest to pick any other way.
+	//
+	// GetOpenPopupsForXamlRoot does not say which popup is on top. Later-opened ones are taken to be,
+	// so the list is walked from its end; with one popup open, which is the ordinary case, the order
+	// does not arise.
+	std::vector<xaml::UIElement> Under(winrt::Windows::Foundation::Point const& point)
+	{
+		std::vector<xaml::UIElement> found;
+
+		if (const auto root = Root())
+		{
+			try
+			{
+				const auto popups = xmedia::VisualTreeHelper::GetOpenPopupsForXamlRoot(root);
+				for (uint32_t i = popups.Size(); i > 0; i--)
+				{
+					const auto child = popups.GetAt(i - 1).Child();
+					if (!child) continue;
+
+					for (auto&& element : xmedia::VisualTreeHelper::FindElementsInHostCoordinates(point, child, m_includeAllElements))
+					{
+						found.push_back(element);
+					}
+				}
+			}
+			catch (winrt::hresult_error const& error)
+			{
+				// A popup closing between the enumeration and the hit test is ordinary, and costs only
+				// the popups: the page below is still answered.
+				Trace(std::wstring(L"under: popups could not be hit-tested: ") + error.message().c_str());
+			}
+		}
+
+		if (const auto content = Content())
+		{
+			// includeAllElements: see Beneath for why it defaults to false.
+			for (auto&& element : xmedia::VisualTreeHelper::FindElementsInHostCoordinates(point, content, m_includeAllElements))
+			{
+				found.push_back(element);
+			}
+		}
+
+		return found;
+	}
+
 	xaml::UIElement Beneath(winrt::Windows::Foundation::Point const& point, winrt::Windows::Foundation::Rect& rect)
 	{
-		const auto root = Content();
-		if (!root)
+		if (!Content())
 		{
 			Trace(L"beneath: the window has no content");
 			return nullptr;
@@ -1313,7 +1363,7 @@ private:
 		//
 		// True stays available on request, because inspecting an invisible overlay host is sometimes
 		// exactly the goal. It is never the default.
-		const auto found = xmedia::VisualTreeHelper::FindElementsInHostCoordinates(point, root, m_includeAllElements);
+		const auto found = Under(point);
 		uint32_t considered = 0;
 		for (auto&& element : found)
 		{
@@ -1450,7 +1500,6 @@ private:
 	/// costs a few more rows in a file that is written once per click.
 	InstanceHandle Record(xaml::UIElement const& element, winrt::Windows::Foundation::Point const& point)
 	{
-		const auto root = Content();
 		InstanceHandle selected = 0;
 		unsigned int written = 0;
 
@@ -1459,21 +1508,18 @@ private:
 			InstanceHandle topmost = 0;
 			InstanceHandle topmostApp = 0;
 
-			if (root)
+			for (auto&& candidate : Under(point))
 			{
-				for (auto&& candidate : xmedia::VisualTreeHelper::FindElementsInHostCoordinates(point, root, m_includeAllElements))
-				{
-					if (IsOurs(candidate)) continue;
+				if (IsOurs(candidate)) continue;
 
-					winrt::Windows::Foundation::Rect ignored{};
-					if (!Bounds(candidate, ignored)) continue;
-					if (written >= 16) break; // Deep templates go on a long way; the top of the stack is the useful part.
+				winrt::Windows::Foundation::Rect ignored{};
+				if (!Bounds(candidate, ignored)) continue;
+				if (written >= 16) break; // Deep templates go on a long way; the top of the stack is the useful part.
 
-					const InstanceHandle handle = WriteCandidate(file, candidate);
-					if (topmost == 0) topmost = handle;
-					if (topmostApp == 0 && IsAppXaml(handle)) topmostApp = handle;
-					written++;
-				}
+				const InstanceHandle handle = WriteCandidate(file, candidate);
+				if (topmost == 0) topmost = handle;
+				if (topmostApp == 0 && IsAppXaml(handle)) topmostApp = handle;
+				written++;
 			}
 
 			// The framework found nothing usable but something was picked, so say that much.
