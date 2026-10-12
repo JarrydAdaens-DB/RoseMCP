@@ -13,8 +13,8 @@
   - a dark drop-down under it, the same panel colour as the bar, with four rows (No delay, 3-, 5- and
     10-second delay), each with a stopwatch icon;
   - the current row marked by a short rose bar on its left edge.
-- **Status:** In progress. Tried on 13 October 2026: the countdown works, but zero picks instead of
-  entering select mode. Phase E changes that.
+- **Status:** In progress. Phase E (`55ce08c`) tried on 13 October 2026 and works: zero enters
+  select mode. Left before a PR: Q8's results, and the probe-app popups and their test.
 - **Revised 12 October 2026:** this plan first assumed it would build on Story 1's hotkeys. It no
   longer does. The Escape and hotkey steps moved to Story 3.
 - **Revised 13 October 2026:** zero enters select mode; it doesn't pick. The story asked for an
@@ -423,3 +423,14 @@ Q8's results are written down, whatever they are.
   considered` counts hit-test candidates walked, not layers. So the popup pick is still untried.
 - That's what the plan said, but not what I wanted. Zero should enter select mode, as in the
   Snipping Tool. Plan revised: Phase E.
+
+**13 October 2026, Phase E** (`55ce08c` on `ja/delayed-select`):
+
+- `CountdownEnded()` calls `BeginSelect(false)`; the pointer checks went, and `PickAt` folded back
+  into `OnPick`, which now matches upstream. The comment in `Finish` says why `m_expired` comes
+  last. `overlay.md` and the chip's tooltip were rewritten in the same commit.
+- Checks: both providers build; unit suite 1810/1810; `Check-Comments` none new;
+  `LiveAppUwpOverlayTests` 5/5; `LiveAppWinUiTests` 8/8.
+- Deployed and tried: "That works perfectly." Zero enters select mode and I pick by clicking.
+- Still not written down: Q8 for each popup kind (flyout, `MenuFlyout`, tooltip, windowed WinUI
+  flyout), the probe-app popups and the popup-pick integration test.

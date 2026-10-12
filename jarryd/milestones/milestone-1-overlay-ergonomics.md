@@ -8,7 +8,7 @@ drive, so picking and measuring elements doesn't mean reaching for the mouse eve
 | # | Story | Status |
 | --- | --- | --- |
 | 1 | [Hotkeys for the overlay toolbar](#1-hotkeys-for-the-overlay-toolbar) | In progress |
-| 2 | [Delayed select, like the Snipping Tool's timer](#2-delayed-select-like-the-snipping-tools-timer) | In progress (being changed) |
+| 2 | [Delayed select, like the Snipping Tool's timer](#2-delayed-select-like-the-snipping-tools-timer) | In progress (works; popup checks left) |
 | 3 | [Hotkeys for the timer](#3-hotkeys-for-the-timer) | Waiting on 1 and 2 |
 
 Stories 1 and 2 are independent: each has its own branch from the same commit, and its own PR.
@@ -73,8 +73,8 @@ shortcut.
 
 ### 2. Delayed select, like the Snipping Tool's timer
 
-**Status:** In progress (tried 13 October 2026; zero picks instead of entering select mode, so
-being changed)
+**Status:** In progress (zero enters select mode, tried and working on 13 October 2026; popup
+checks left before a PR)
 
 **Why:** the UI I most need to inspect is the UI that goes away when I reach for the overlay:
 flyouts, tooltips, hover states, menus, anything that dismisses on a pointer exit or a click
