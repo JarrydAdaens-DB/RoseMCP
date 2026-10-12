@@ -8,7 +8,7 @@ drive, so picking and measuring elements doesn't mean reaching for the mouse eve
 | # | Story | Status |
 | --- | --- | --- |
 | 1 | [Hotkeys for the overlay toolbar](#1-hotkeys-for-the-overlay-toolbar) | In progress |
-| 2 | [Delayed select, like the Snipping Tool's timer](#2-delayed-select-like-the-snipping-tools-timer) | In progress |
+| 2 | [Delayed select, like the Snipping Tool's timer](#2-delayed-select-like-the-snipping-tools-timer) | In progress (being changed) |
 | 3 | [Hotkeys for the timer](#3-hotkeys-for-the-timer) | Waiting on 1 and 2 |
 
 Stories 1 and 2 are independent: each has its own branch from the same commit, and its own PR.
@@ -73,7 +73,8 @@ shortcut.
 
 ### 2. Delayed select, like the Snipping Tool's timer
 
-**Status:** In progress (built on `ja/delayed-select`, waiting on a try-out)
+**Status:** In progress (tried 13 October 2026; zero picks instead of entering select mode, so
+being changed)
 
 **Why:** the UI I most need to inspect is the UI that goes away when I reach for the overlay:
 flyouts, tooltips, hover states, menus, anything that dismisses on a pointer exit or a click
@@ -115,11 +116,10 @@ repo). It shows the toolbar with the new timer chip and its menu open.
    - The implementer has freedom with the exact look: wedge or ring, with or without a visible
      hand, the colours. The constraints: use the overlay's accent, keep it on or immediately around
      the chip, keep it smooth (not a once-a-second jump), and make it read well at chip size.
-7. **When the countdown ends, Rose picks straight away**, whatever is under the pointer at that
-   moment. No click is needed. The pick is the same as a Select click there would give: the same
-   hit test, the same Just my XAML rule, the same element stack (see
-   `docs/decisions/a-pick-honours-hit-testing-and-prefers-the-apps-markup.md`). It shows its
-   outline and reaches agents and the Inspector exactly like a clicked pick.
+7. **When the countdown ends, the overlay goes into Select element mode**, exactly as if I'd
+   clicked Select with No delay: the mode switches from Idle to Select in the tap, the Select chip
+   lights up, and I hover and click to pick as usual. This is how the Snipping Tool works: the timer
+   delays entering snip mode, it doesn't take the snip for you. Nothing is picked automatically.
 8. **Cancellable.** Clicking Idle, Select element or the timer chip during the countdown cancels
    it, and the chip goes back to its resting icon. Cancelling leaves nothing running. (Escape is
    Story 3.)
@@ -127,15 +127,13 @@ repo). It shows the toolbar with the new timer chip and its menu open.
 
 **Notes:**
 
-- **Why the pick fires on its own, rather than select mode coming on and waiting for a click.**
-  Both of those dismiss the UI this story exists to catch:
-  - A click outside a light-dismiss flyout closes it.
-  - If select mode puts a layer over the app, the control underneath gets a pointer-exit, which
-    ends tooltips and hover states.
-
-  So at zero, hit-test at the current pointer position and pick, without putting anything under
-  the pointer first. If that proves impossible in some case, write down why in the plan before
-  falling back to "select mode comes on".
+- **Zero enters select mode; it doesn't pick.** The first build picked whatever was under the
+  pointer at zero, without entering select mode, because the story said so. That was my mistake in
+  writing the story, not what I wanted (revised 13 October 2026). What I want is the Snipping Tool's
+  behaviour: the delay goes before the mode, and the mode then works as it always does.
+  - Watch for: arming select mode puts the capture layer over the app. That may end a tooltip or
+    a hover state (pointer-exit), and a click may dismiss a light-dismiss flyout. Try it with real
+    flyouts and tooltips and write down what happens. Don't design around it before seeing it.
 - **Keep the countdown visual on the toolbar, away from the pointer.** Anything drawn under or
   next to the pointer can steal hover from the target UI and dismiss it. That's why the sweep lives
   on the chip and not as a cursor decoration.
@@ -149,9 +147,8 @@ repo). It shows the toolbar with the new timer chip and its menu open.
     `tap_tool_zoom.h`. No thread-pool timers, no sleeping, no work posted from another thread.
   - Stop and release it on cancel, on expiry, when the overlay is hidden or torn down, and when the
     tap goes away. `docs/invariants/xaml-tap-lifecycle.md` says when that happens.
-  - A pick that fires with nothing pickable under the pointer is a no-op, not a crash.
   - Drive the sweep from the same clock, or from a storyboard or composition animation of the same
-    duration, so the sweep and the pick can't drift apart.
+    duration, so the sweep and the switch into select mode can't drift apart.
 - **Steve's alternative, considered and not taken for this story:** a conditional breakpoint that
   stops the app while the UI is open, then inspecting it. It doesn't work for picking: while the
   target is stopped its UI thread can't answer any XAML request, and `TargetXaml.WhyUnservable` in

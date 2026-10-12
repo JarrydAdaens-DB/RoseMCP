@@ -13,19 +13,24 @@
   - a dark drop-down under it, the same panel colour as the bar, with four rows (No delay, 3-, 5- and
     10-second delay), each with a stopwatch icon;
   - the current row marked by a short rose bar on its left edge.
-- **Status:** In progress (built on ja/delayed-select, waiting on a try-out). Phase A decides whether the rest of the
-  story is possible as written.
+- **Status:** In progress. Tried on 13 October 2026: the countdown works, but zero picks instead of
+  entering select mode. Phase E changes that.
 - **Revised 12 October 2026:** this plan first assumed it would build on Story 1's hotkeys. It no
   longer does. The Escape and hotkey steps moved to Story 3.
-- **Last updated:** 12 October 2026
+- **Revised 13 October 2026:** zero enters select mode; it doesn't pick. The story asked for an
+  automatic pick, which was a mistake in the story, not what I wanted. Phase D's expiry and timed
+  pick (step 11) are replaced by Phase E. Phases A to C and the rest of D stand.
+- **Last updated:** 13 October 2026
 - **Size:** large. Phase A is a real unknown about popups. The menu is the overlay's first drop-down,
   and the sweep is new drawing.
 
 ## Objective
 
 A delay picked from a new timer chip makes Select element count down on the chip, without touching
-the app. When the countdown ends, it picks whatever is under the pointer, the same way a click would,
-including when what is under the pointer is an open flyout, menu or tooltip.
+the app. When the countdown ends, the overlay enters Select element mode, exactly as a click on
+Select with no delay does: the tap's mode goes from `idle` to `select`, the Select chip lights up,
+and I pick by hovering and clicking. That is the Snipping Tool's model: the timer delays the mode,
+it doesn't act for me. Picks in select mode see open flyouts, menus and tooltips (Phase B).
 
 ## Scope
 
@@ -35,7 +40,7 @@ including when what is under the pointer is an open flyout, menu or tooltip.
 - The timer chip and its icons.
 - The drop-down menu.
 - The countdown: the digit and the sweep.
-- The pick when the countdown ends.
+- Entering select mode when the countdown ends.
 - Cancel paths.
 - A flyout, a menu and a tooltip added to the probe apps, so all of this can be checked.
 - Records.
@@ -66,7 +71,8 @@ including when what is under the pointer is an open flyout, menu or tooltip.
   - `Beneath` and `Record` both take a plain `Point`, and both apply the hit-test and Just my XAML
     rules from the [pick decision](../../../../docs/decisions/a-pick-honours-hit-testing-and-prefers-the-apps-markup.md).
   - So a timed pick is: lift the body of `OnPick` into `PickAt(Point)` and call it from the expiry,
-    with no capture layer involved.
+    with no capture layer involved. (Superseded 13 October: zero arms select mode, and step 15
+    folds `PickAt` back.)
 - **Where the pointer is.** `m_pointer` is kept up to date by the passive watcher (`Proximity`), in
   the layer's coordinates.
   - On leaving the window it becomes `(-1, -1)`.
@@ -110,8 +116,9 @@ including when what is under the pointer is an open flyout, menu or tooltip.
 
 - **Q1. Do picks see open popups, in each framework?** Status: OPEN. Phase A answers it.
   - Assumption: they don't, so Phase B is needed.
-- **Q2. On WinUI 3, is `m_pointer` right while the pointer is over a windowed popup?** Status: OPEN.
-  Phase A answers it.
+- **Q2. On WinUI 3, is `m_pointer` right while the pointer is over a windowed popup?** Status:
+  NO LONGER NEEDED (13 October). Only the timed pick read `m_pointer`; select mode picks from the
+  capture layer's own pointer events. Kept below for the record.
   - If it isn't, read the cursor directly at expiry through a provider seam, e.g.
     `RoseTapPointerNow(anchor, Point&)`.
     - UWP: `CoreWindow::PointerPosition`.
@@ -125,13 +132,21 @@ including when what is under the pointer is an open flyout, menu or tooltip.
   OPEN.
   - Assumption: it cancels the countdown, then does its own thing. An agent's explicit request beats
     a timer the person may have forgotten about.
-- **Q5. Pointer over the toolbar (or the menu) at zero.** Status: ANSWERED by design. It is a no-op,
-  logged. `Beneath` would otherwise pick the app element underneath the bar, which nobody pointed at.
+- **Q5. Pointer over the toolbar (or the menu) at zero.** Status: NO LONGER APPLIES (13 October).
+  Zero arms select mode wherever the pointer is, the same as clicking Select does.
+- **Q8. Does arming select mode at zero dismiss what I wanted to inspect?** Status: OPEN, try it.
+  - The capture layer arriving under the pointer may send the control beneath a pointer-exit, which
+    can end a tooltip or a hover state. A click in select mode may light-dismiss a flyout, or may
+    not, depending on whether the diagnostics UI layer sits above the popup root.
+  - Don't design around this before seeing it. Try a flyout, a `MenuFlyout` and a tooltip in UWP
+    and WinUI, and write the results here. If something closes, that's a follow-up story, not a
+    reason to bring the automatic pick back.
 - **Q6. Does Segoe MDL2 / Fluent have a stopwatch and a slashed stopwatch?** Status: OPEN.
   - Check in the character map. If either is missing, compose it the way `SelectIcon()` does: the
     stopwatch glyph with a `Line` for the slash, or a small `TextBlock` for the digit.
   - Do not ship a codepoint that hasn't been checked. A wrong one renders as a hollow box.
-- **Q7. Is "nothing pickable" at zero just a log line, or also visible on the chip?** Status: OPEN.
+- **Q7. Is "nothing pickable" at zero just a log line, or also visible on the chip?** Status: NO
+  LONGER APPLIES (13 October). Zero doesn't pick.
   - Assumption: a log line, with the chip going back to rest. Revisit after you've used it.
 
 ## Execution steps
@@ -229,7 +244,8 @@ including when what is under the pointer is an open flyout, menu or tooltip.
         `Rendering` on every exit, and say in the code why it is acceptable.
     - The constraints from the story: on or immediately around the chip, the accent colour, smooth,
       and readable at chip size.
-11. **Expiry.**
+11. **Expiry.** *Superseded on 13 October 2026 by Phase E: zero arms select mode instead of
+    picking. Kept as written because `83d81ce` built it.*
     1. Stop the storyboard.
     2. `EndOperation(Countdown)`.
     3. Put the chip back to its resting icon.
@@ -260,6 +276,39 @@ including when what is under the pointer is an open flyout, menu or tooltip.
     - Update the pick decision if popup ordering changes what "what a click would hit" means.
     - Add an `inbox.md` line for the wiki page and for the "Next popup" follow-up.
 
+### Phase E: zero enters select mode (added 13 October 2026)
+
+One new commit on `ja/delayed-select`, on top of `83d81ce`. Everything else stays: the chip, menu,
+icons, countdown, sweep, cancel paths, and the popup-aware pick from `a5edb74`.
+
+14. **Expiry arms select mode.** `CountdownEnded()` in `tap_overlay.h` stops picking and calls
+    `BeginSelect(false)`, the same call the Select chip makes with No delay.
+    - The tap's mode goes `idle` to `select`. `ModeName()` reports `select` and the Select chip
+      lights up, so the pipe and the Inspector see it exactly as a clicked Select.
+    - Remove the "pointer outside the window" and "pointer on the toolbar" early returns. They only
+      existed for the automatic pick.
+    - Re-entrancy: expiry runs from `Finish(true)`, and `BeginSelect` goes through `Point()`, which
+      cancels the countdown. That's safe only because `Finish` clears `m_running`, stops the timer
+      and the storyboard, and calls `Notify()` (busy off, `EndOperation`) *before* it calls
+      `m_expired()`. Then `Cancel()` returns early on `!m_running` and never re-enters `Finish`,
+      and `BeginSelect`'s own operation isn't un-pinned afterwards. `83d81ce` already has that
+      order (`tap_tool_timer.h`, `Finish`); keep it, and say so in a comment there.
+15. **Fold `PickAt` back into `OnPick`**, since the click is its only caller again. Keeps the
+    upstream diff smaller. (If it reads better extracted, leave it, and say why in the log.)
+16. **Records, in the same commit as the code** (CLAUDE.md: invariants change in the same commit as
+    the code they constrain).
+    - In the popup invariant in `overlay.md`, "Hover, click and the timed pick all go through it"
+      loses "the timed pick".
+    - Rewrite the "timed pick puts nothing under the pointer" invariant in
+      `docs/invariants/overlay.md`. It becomes: the delay goes before the mode, the countdown
+      captures nothing and reports `idle`, zero arms select exactly as the chip does, and every exit
+      goes through one `Finish`. Keep the "menu is a `Border`, not a `Flyout`" sentence.
+    - Fix the comments on `SelectChip()` and `CountdownEnded()`, and any in `tap_tool_timer.h`
+      that talk about picking at zero.
+    - Run `tools/Check-Comments.ps1`.
+17. **Checks:** both providers build, unit suite, `LiveAppUwpOverlayTests`, `LiveAppWinUiTests`.
+    Then deploy for a try-out, after asking.
+
 ## Validation
 
 **Automated:**
@@ -279,27 +328,28 @@ including when what is under the pointer is an open flyout, menu or tooltip.
 1. The timer chip sits between Select and Rulers. The menu matches the mockup. The current row has
    the rose bar. Picking a row closes the menu and changes the chip's icon. The chip is rose while a
    delay is set. The choice persists after a pick.
-2. With 3s set: click Select, move to the flyout's button, open the flyout, and hover an item inside
-   it. The digit counts 3, 2, 1, the sweep runs smoothly counter-clockwise from 12, and at zero the
-   flyout item is picked and outlined. The flyout is still open. `rose_xaml_selection` reports it.
+2. With 3s set: click Select, move to the flyout's button and open the flyout. The digit counts
+   3, 2, 1 and the sweep runs smoothly counter-clockwise from 12. At zero the Select chip lights up
+   and the tap's mode is `select`. Nothing is picked until I click. Hovering the flyout highlights
+   its items, and clicking one picks it; `rose_xaml_selection` reports it. Note whether the flyout
+   stayed open (Q8).
 3. The same with a tooltip and with a `MenuFlyout`, and, on WinUI, with an unconstrained (windowed)
-   flyout.
-4. Cancel through every path in step 12. Each one stops the sweep and returns the chip to rest, with
-   no pick later.
-5. At zero with the pointer on the toolbar, or outside the window, nothing is picked, a log line
-   says so, and nothing crashes.
+   flyout. Note for each whether arming or clicking closed it (Q8).
+4. Cancel through every path in step 12. Each one stops the sweep and returns the chip to rest, and
+   select mode never comes on.
+5. Zero with the pointer on the toolbar or outside the window still arms select mode, and nothing
+   crashes.
 6. No delay: Select behaves exactly as before.
 7. Collapse during a countdown cancels it. Re-expanding shows a resting chip.
 
-**Done when:** the milestone's nine "What done looks like" points hold in UWP and WinUI 3, and a
-light-dismiss flyout survives being picked.
+**Done when:** the milestone's nine "What done looks like" points hold in UWP and WinUI 3, and
+Q8's results are written down, whatever they are.
 
 ## Risks
 
 - **Popups can't be hit-tested in some case** (a windowed popup on WinUI).
   - Mitigation: Phase A runs first. Write down why, then fall back for that case only.
-- **`m_pointer` is stale over a windowed popup.**
-  - Mitigation: the `RoseTapPointerNow` seam, measured in Phase A.
+- **`m_pointer` is stale over a windowed popup.** Moot since 13 October: nothing reads it at zero.
 - **Timers inside someone else's app** (Steve's concern).
   - Mitigation: one `DispatcherTimer` on the UI thread, stopped as the first thing in `Tick`. One
     storyboard. A single `CancelCountdown` called from every exit. `try`/`catch` in `Tick`. No pool
@@ -310,6 +360,8 @@ light-dismiss flyout survives being picked.
 - **A drop-down drawn in the overlay looks or behaves unlike the bar.**
   - Mitigation: build it only from the `RoseWidgets` palette and constants. Check it against the
     mockup.
+- **Arming select mode closes the UI the delay was for** (Q8).
+  - Mitigation: none built in advance. Try it, record it, and make any fix its own story.
 - **Probe-app additions break existing assertions.**
   - Mitigation: step 1 checks for that, and fixes the assertions rather than avoiding the change.
 
@@ -361,3 +413,13 @@ light-dismiss flyout survives being picked.
   itself non-hit-testable in code, and the pick uses `includeAllElements = false`. Try it. If
   tooltips are missed, hit-testing popups with `true` is a design call, not a quiet fix.
 - Not done: probe-app flyouts, and the integration test for a popup pick (both Phase A material).
+
+**13 October 2026, try-out** (deployed `83d81ce`, UWP app):
+
+- The chip, the menu and the countdown work: the digit counts down and the sweep runs.
+- At zero it picked whatever was under the pointer and drew the outline, without entering select
+  mode. The tap log shows `countdown ended` followed by `recorded <element>` each time, and one
+  `pointer on the toolbar; nothing picked`. The log can't say whether a popup was open: `of N
+  considered` counts hit-test candidates walked, not layers. So the popup pick is still untried.
+- That's what the plan said, but not what I wanted. Zero should enter select mode, as in the
+  Snipping Tool. Plan revised: Phase E.
