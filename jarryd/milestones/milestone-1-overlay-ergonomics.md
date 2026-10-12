@@ -73,7 +73,7 @@ shortcut.
 
 ### 2. Delayed select, like the Snipping Tool's timer
 
-**Status:** In progress (branch `ja/delayed-select`, no code yet)
+**Status:** In progress (built on `ja/delayed-select`, waiting on a try-out)
 
 **Why:** the UI I most need to inspect is the UI that goes away when I reach for the overlay:
 flyouts, tooltips, hover states, menus, anything that dismisses on a pointer exit or a click

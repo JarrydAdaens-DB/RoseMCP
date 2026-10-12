@@ -13,7 +13,7 @@
   - a dark drop-down under it, the same panel colour as the bar, with four rows (No delay, 3-, 5- and
     10-second delay), each with a stopwatch icon;
   - the current row marked by a short rose bar on its left edge.
-- **Status:** In progress (branch created, no code yet). Phase A decides whether the rest of the
+- **Status:** In progress (built on ja/delayed-select, waiting on a try-out). Phase A decides whether the rest of the
   story is possible as written.
 - **Revised 12 October 2026:** this plan first assumed it would build on Story 1's hotkeys. It no
   longer does. The Escape and hotkey steps moved to Story 3.
@@ -321,4 +321,43 @@ light-dismiss flyout survives being picked.
   thread.
 - `docs/decisions/a-pick-honours-hit-testing-and-prefers-the-apps-markup.md`
 - `tap_tool_zoom.h`: `StartLens` / `StopLens` is the timer pattern.
-- Phase A results: *not yet measured.*
+- Phase A results: not measured. Skipped on 12 October 2026 at my call, to save time; Phase B was
+  built straight away (see the log).
+
+## Execution Log
+
+**12 October 2026, on `ja/delayed-select`:**
+
+- `a5edb74`: a pick sees open popups (Phase B). `Under(point)` in `tap_overlay.h` hit-tests
+  `GetOpenPopupsForXamlRoot` from the end of the list, then the content. `Beneath` and `Record` both
+  use it, so click-picks over a flyout change too: popup rows now come ahead of page rows in
+  `rose_xaml_selection`. This is intended. The invariant is in `overlay.md`.
+- `83d81ce`: the timer chip, menu, countdown and timed pick (Phases C and D), in a new
+  `tap_tool_timer.h`, registered as tier 3.
+  - The icon is MDL2 E916 (Stopwatch), checked by rendering it. A badge holds the number, and a
+    slash is two `Line`s.
+  - The sweep is the two-half-disc rotation. The digit is an `ObjectAnimationUsingKeyFrames` on
+    `Text`, in the same storyboard as the sweep.
+  - Menu rows use `Tapped`. The shield is a transparent `Grid` adorned after the panel, so it also
+    covers the toolbar.
+  - `PickAt` is shared by the click and the timed pick.
+  - At zero, it picks nothing (with a log line) when the pointer is unknown or on the toolbar.
+  - Cancel paths: Idle, Select or the timer chip again; `Point()` (either mode, from the toolbar or
+    the pipe); `SelectByHandle`; `Deselect`; `Collapse(true)`.
+- **Checks:**
+  - Both providers build at x64 Debug.
+  - Unit suite: 1810/1810.
+  - `Check-Comments`: none new.
+  - `LiveAppUwpOverlayTests`: 5/5.
+  - `LiveAppWinUiTests`: 8/8.
+- **Not checked yet: nothing has been tried by hand.** In particular:
+  - whether the sweep and the digit animate at all;
+  - whether `Tapped` fires on the menu rows;
+  - where the menu lands;
+  - a timed pick over a real flyout, in both UWP and WinUI;
+  - a windowed WinUI flyout (Q2).
+- **Tooltips are unsettled.** Neither framework's default `ToolTip` style sets
+  `IsHitTestVisible`, so the style doesn't rule them out. But the framework may make the popup
+  itself non-hit-testable in code, and the pick uses `includeAllElements = false`. Try it. If
+  tooltips are missed, hit-testing popups with `true` is a design call, not a quiet fix.
+- Not done: probe-app flyouts, and the integration test for a popup pick (both Phase A material).
