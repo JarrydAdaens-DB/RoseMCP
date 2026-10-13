@@ -10,6 +10,7 @@ drive, so picking and measuring elements doesn't mean reaching for the mouse eve
 | 1 | [Hotkeys for the overlay toolbar](#1-hotkeys-for-the-overlay-toolbar) | In progress |
 | 2 | [Delayed select, like the Snipping Tool's timer](#2-delayed-select-like-the-snipping-tools-timer) | In progress (works; popup checks left) |
 | 3 | [Hotkeys for the timer](#3-hotkeys-for-the-timer) | Waiting on 1 and 2 |
+| 4 | [A locally built Rose doesn't look like a release](#4-a-locally-built-rose-doesnt-look-like-a-release) | Not started |
 
 Stories 1 and 2 are independent: each has its own branch from the same commit, and its own PR.
 Anything that needs both lives in Story 3, so neither PR waits on the other.
@@ -202,3 +203,77 @@ may be the one where the countdown starts without the pointer ever leaving the t
   popups or outside the main island. It
   matters here: the timer exists for flyouts, and a hotkey that dies inside one is half the feature.
 - Plan not written yet.
+
+---
+
+### 4. A locally built Rose doesn't look like a release
+
+**Status:** Not started
+
+**Why:** I run my fork's build every day, and it looks identical to Steve's release. I can't tell
+at a glance which one is in my tray, which overlay is drawn over my app, or which one an agent is
+talking to.
+
+**What done looks like:**
+
+1. A build from Steve's release workflow is unchanged: the rose (`#C2185B`).
+2. Any other build uses a different accent everywhere the rose appears:
+   - the Tray and Inspector windows (`RoseAccentBrush` and `RoseAccentSoftBrush`, light and dark;
+     high contrast stays on the system's colours, as it is now)
+   - the in-app overlay: toolbar chips, the pick outline and badge, the rulers, the timer
+   - the tray icon, the window icons and the installer icon
+3. The accent is one build setting with a default, so either kind of build can be given another
+   colour without editing code.
+
+**Notes:**
+
+- **Why "release or not", not "Steve's or mine".** The build can already tell a release from
+  anything else: `RoseMcpUpdateCheck` in `Directory.Build.props` is off unless the release workflow
+  turns it on. Key the accent off the same switch, or a sibling property, so "is this a release?"
+  lives in one place. In practice that means Steve's releases are rose and everything I build is
+  not. Steve gets the same benefit for his own dev builds, which makes this worth a PR upstream.
+  Doing it only in my fork would mean code on `develop`, which `git-flow.md` rules out.
+- **Where the colour lives.** It isn't built into the exes. It's typed out by hand in these places:
+
+  | Where | What it colours |
+  | --- | --- |
+  | `src/RoseMcp.Ui/Themes/Rose.xaml` | Tray and Inspector. Light `#C2185B`, dark `#F27CA5`, a translucent "soft" version of each. Everything uses the brush. |
+  | `src/RoseMcp.Xaml.Tap/tap_widgets.h` | `Accent()` at line 60, but the same `0xC2, 0x18, 0x5B` is typed out again at lines 337 and 348. |
+  | `src/RoseMcp.Xaml.Tap/tap_tool_rulers.h` | The rulers' leader lines, lines 323-330. |
+  | `src/RoseMcp.Xaml.Tap/tap_tool_timer.h` | The countdown disc, line 265. Only once Story 2 has landed. |
+  | `tools/Rose.ps1` | `$script:Tile`, line 20: the icon's background square. |
+
+  Line numbers are from 13 October 2026; search for `0xC2, 0x18, 0x5B` and `C2185B` to find them
+  again.
+- **Overlay first, as its own commit:** make the copies in the tap headers one named accent with
+  no change in behaviour, then make that accent come from the build. A compile-time define is
+  enough. Don't send the colour over the pipe: that changes the wire format, which
+  `docs/invariants/xaml-tap-lifecycle.md` guards. Read `docs/invariants/tap-tiers.md` before
+  deciding which header owns it.
+- **Theme:** `Rose.xaml` holds whole brushes per theme on purpose; its comment says a brush built
+  outside a theme dictionary doesn't follow a theme change. Swap the brushes per build, for example
+  by choosing which dictionary gets merged, rather than computing a colour in code.
+- **Icons:** `tools/Generate-Icons.ps1` draws the rose from a formula and writes
+  `rose-mcp.ico`/`.png` (`-Mark Rose`) and `rose-inspector.ico`/`.png` (`-Mark Lens`) into each
+  app's `Assets/`. The apps load them from disk when they start (`WindowChrome.ApplyIcon`, and
+  `Tray.Icon` in the Tray's `MainWindow.xaml.cs`); there's no `ApplicationIcon` in either project.
+  The installer takes the staged `rose-mcp.ico` (`installer/rosemcp.iss`, `SetupIconFile`). So
+  either check in a second set of icons drawn with the other tile colour, and have the build pick
+  which set to copy, or generate them at build time. Checked-in files are simpler and match how
+  the current icons are made. `tests/RoseMcp.UnitTests/InstallerLayoutTests.cs` checks the
+  installer's layout, so run it.
+- **Dark mode:** the rose has a lighter dark-mode version because the icon's colour reads as brown
+  on a dark background. The new accent needs its own, checked by eye in both themes.
+- **Suggested colour:** something nowhere near magenta, like teal: `#00838F` light and `#4DD0E1`
+  dark. White on `#00838F` is readable on the icon square. Final pick is mine.
+- **Cheap extras, if they fit:** "(dev)" in the window titles, and the version string MinVer
+  already stamps (`HostVersion`). A local build reads like `1.2.1-alpha.0.3`, which already gives
+  it away.
+- **Out of scope:** running both side by side. Both installs share the install folder, the
+  settings file, the log folder and the port, so only one runs at a time anyway.
+- **If Steve doesn't want it upstream:** a `-Accent` switch on `tools/deploy.ps1` that only my
+  deploys pass. It's more of a hack, and it would live on a branch of my own, not on `develop`.
+- **Not overlay ergonomics strictly**, but it touches the overlay more than anything else, so it
+  lives here. Independent of Stories 1 to 3: branch from `develop`, its own PR.
+
+**Plan:** none yet.
