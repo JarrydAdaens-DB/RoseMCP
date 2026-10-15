@@ -11,6 +11,7 @@ drive, so picking and measuring elements doesn't mean reaching for the mouse eve
 | 2 | [Delayed select, like the Snipping Tool's timer](#2-delayed-select-like-the-snipping-tools-timer) | In progress (works; popup checks left) |
 | 3 | [Hotkeys for the timer](#3-hotkeys-for-the-timer) | Waiting on 1 and 2 |
 | 4 | [A locally built Rose doesn't look like a release](#4-a-locally-built-rose-doesnt-look-like-a-release) | Not started |
+| 5 | [An Inspector chip on the overlay](#5-an-inspector-chip-on-the-overlay) | Not started (waits on an upstream release) |
 
 Stories 1 and 2 are independent: each has its own branch from the same commit, and its own PR.
 Anything that needs both lives in Story 3, so neither PR waits on the other.
@@ -275,5 +276,81 @@ talking to.
   deploys pass. It's more of a hack, and it would live on a branch of my own, not on `develop`.
 - **Not overlay ergonomics strictly**, but it touches the overlay more than anything else, so it
   lives here. Independent of Stories 1 to 3: branch from `develop`, its own PR.
+
+**Plan:** none yet.
+
+---
+
+### 5. An Inspector chip on the overlay
+
+**Status:** Not started. Waits on the next Steve release (see the first note).
+
+**Why:** the Inspector is where Pause, Continue, the steps, the stack and the events live, and
+getting to it is hard. You have to find the tray, find the session's row and press Inspect, or copy
+the Inspector command with its token and run it. The overlay is already drawn over the app I'm
+debugging, and its tap belongs to exactly one session, so it already knows which Inspector I mean.
+It never needs the token: the broker holds the token, and the tap only says "open it".
+
+**What done looks like:**
+
+1. **A new chip on the toolbar**, to the right of the Zoom (magnifying glass) chip and to the left
+   of the Hide chevron. It's drawn like every other chip (`Chip(...)` in `tap_widgets.h`), with an
+   icon that reads as "the Inspector". The Inspector's own lens mark is the obvious choice.
+2. **Clicking it opens the Inspector on this session**, the same window the tray's Inspect button
+   opens, with the session and the target's pid already filled in.
+3. **The chip is drawn active (rose) while that Inspector window is open**, and goes back to idle
+   when the window closes, however it closes: this chip, the window's own close button, or the app
+   exiting.
+4. **Clicking it while it's rose closes that Inspector window.** It doesn't touch the debug session:
+   the target keeps running and the session stays attached.
+5. **If an Inspector can't be opened from this broker** (a stdio-only broker has no operator
+   endpoint, or no Inspector is installed), the chip is disabled, and its tooltip says why. The
+   reason already exists as `IInspectorPresenter.Obstacle`.
+6. Works in both the UWP and the WinUI tap.
+
+**Notes:**
+
+- **Upstream has most of the route already, but not in a release yet.** `develop` is on `v1.3.0`.
+  Upstream `main` past that tag has:
+  - an **Ask** chip on the toolbar that opens the Inspector (#226, #467);
+  - `RoseTapAsk` / `g_ask` in `tap_surface.h`: a latch the tap sets and the host collects. The tap
+    never speaks first on the pipe, so a press can't be sent; it has to be left for the host to
+    pick up;
+  - `LiveAppSessionManager.OpenInspectorFor`: on the host's regular refresh, the broker sees the
+    collected press and calls `IInspectorPresenter.Show(sessionId, targetPid)`;
+  - the Inspector moved into `RoseMcp.App`, one process that is single-instance per broker.
+
+  So the "open" half is a second kind of press on a path that already exists. Wait for the release
+  that carries it, then branch from `develop` as usual (`git-flow.md`). Building it on `v1.3.0`
+  would mean building that route a second time.
+- **Upstream also puts two more chips in the same spot.** On `main`, Zoom is followed by
+  **Changes** and **Ask**, then Hide. "Right of Zoom, left of Hide" means after Ask there, so Hide
+  stays the last thing in the row. Check the bar again when the release lands.
+- **How it differs from Ask, and why it isn't Ask:** Ask is disabled when nothing is picked,
+  measured or under the lens. It's lit only between the press and the host collecting it, and it
+  opens the Inspector with a note filled in. This chip is always available, it shows whether the
+  window is open, and it closes it. Raise the question with Steve: maybe it's a change to Ask rather
+  than a new chip. The answer decides the PR's shape, not whether I want the button.
+- **New work: the tap has to know the window is open.** Nothing tells the tap that today. The
+  information has to come back down the chain: `RoseMcp.App` knows its windows, it tells the broker
+  (operator API), the broker tells the session's host, and the host tells the tap on a read it already
+  makes. The last hop touches the pipe. Read `docs/invariants/xaml-tap-lifecycle.md` (it guards the
+  wire format, `tap_channel.h` and `XamlWire`) before choosing between a new field and a new request.
+  It doesn't need to be instant: a second of lag on the colour is fine, as it is for Ask.
+- **New work: closing.** Nothing asks the Inspector to close a window today. The broker would ask
+  `RoseMcp.App` to close the window for that session. It probably uses the same redirect it already
+  uses to focus an open window (`AppInstance` in `Program.cs`), or the operator API. Closing should
+  only close the window; the "Show inspector when the debugger attaches" setting stays as it is.
+- **The chip is the tap's own state, so watch the lifecycle.** If the tap goes away and comes back
+  (a new provider in the same session), the chip has to read the open state again rather than
+  remember it.
+- **Related upstream issue:** #491, which asks for an agent-side way to open the Inspector on a
+  running session. Same `IInspectorPresenter.Show` underneath, so whichever lands first makes the
+  other smaller.
+- Where it lives: `BuildBar()` and `Chrome()` in `src/RoseMcp.Xaml.Tap/tap_overlay.h`. Chips and icons
+  are in `tap_widgets.h`. Read `docs/invariants/tap-tiers.md` and `docs/invariants/overlay.md` before
+  starting.
+- **Story 1:** the chip will want a shortcut. Leave it out of this story and add it with the other
+  hotkeys once both have landed, as Story 3 does for the timer.
 
 **Plan:** none yet.
